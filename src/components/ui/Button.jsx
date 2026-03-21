@@ -1,0 +1,43 @@
+import clsx from 'clsx'
+
+const variants = {
+  primary:   'bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white shadow-sm shadow-primary-600/20 hover:shadow-primary-600/30',
+  secondary: 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/80',
+  danger:    'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-sm shadow-red-600/20',
+  ghost:     'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100',
+  success:   'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20',
+}
+const sizes = {
+  xs: 'px-2.5 py-1   text-xs  gap-1.5',
+  sm: 'px-3   py-1.5 text-xs  gap-1.5',
+  md: 'px-4   py-2   text-sm  gap-2',
+  lg: 'px-5   py-2.5 text-sm  gap-2',
+}
+
+export default function Button({
+  children, variant = 'primary', size = 'md',
+  loading = false, disabled = false,
+  className = '', type = 'button', onClick, ...props
+}) {
+  return (
+    <button
+      type={type} onClick={onClick}
+      disabled={disabled || loading}
+      className={clsx(
+        'inline-flex items-center justify-center rounded-lg font-semibold transition-all duration-150',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900',
+        'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none',
+        'select-none',
+        variants[variant] || variants.primary,
+        sizes[size]       || sizes.md,
+        className,
+      )}
+      {...props}
+    >
+      {loading && (
+        <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin flex-shrink-0" />
+      )}
+      {children}
+    </button>
+  )
+}
