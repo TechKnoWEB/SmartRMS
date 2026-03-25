@@ -995,14 +995,14 @@ export default function SuperAdminDashboard() {
   const [notifModal, setNotifModal] = useState(false)
   const [dark, setDark] = useState(() => {
     if (typeof window === 'undefined') return false
-    return localStorage.getItem('sa-theme') === 'dark' ||
-      (!localStorage.getItem('sa-theme') &&
+    return sessionStorage.getItem('sa-theme') === 'dark' ||
+      (!sessionStorage.getItem('sa-theme') &&
         window.matchMedia('(prefers-color-scheme: dark)').matches)
   })
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('sa-theme', dark ? 'dark' : 'light')
+    sessionStorage.setItem('sa-theme', dark ? 'dark' : 'light')
   }, [dark])
 
   // Reset search/filters on tab change

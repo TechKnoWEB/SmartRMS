@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import ForgotPasswordModal from '../components/ForgotPasswordModal'
+import SchoolSearch from '../components/ui/SchoolSearch'
+import { HIDE_SCHOOL_LIST } from '../config'
 import {
   GraduationCap, Eye, EyeOff, ArrowRight, Lock, User,
   AlertTriangle, Clock, BookOpen, Shield, CheckCircle2,
@@ -105,12 +107,13 @@ const FEATURES = [
    ═══════════════════════════════════════════════════════════════ */
 function SchoolSelector({ value, onChange, label = 'School' }) {
   const [schools, setSchools] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!HIDE_SCHOOL_LIST)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
+    if (HIDE_SCHOOL_LIST) return   // skip bulk fetch in secure mode
     supabase
       .from('schools')
       .select('school_name, school_code, tagline')
@@ -121,6 +124,17 @@ function SchoolSelector({ value, onChange, label = 'School' }) {
         setLoading(false)
       })
   }, [])
+
+  // ── Secure mode: search-only ─────────────────────────────────
+  if (HIDE_SCHOOL_LIST) {
+    return (
+      <SchoolSearch
+        selectedCode={value}
+        onSelect={onChange}
+        placeholder="Enter school name or school code to search…"
+      />
+    )
+  }
 
   useEffect(() => {
     if (!open) return

@@ -392,7 +392,7 @@ export default function Users() {
   return (
     <div className="space-y-6">
       {/* ═══ Page Header — Hero Banner ═══ */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-6 md:p-8 shadow-xl shadow-indigo-200/50 dark:shadow-indigo-900/30">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 p-6 md:p-8 shadow-xl shadow-primary-600/15 dark:shadow-primary-900/30">
         {/* Decorative */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
         <div className="absolute bottom-0 left-0 w-40 h-40 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />

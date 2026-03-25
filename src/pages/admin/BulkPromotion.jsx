@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useClasses, useSections } from '../../hooks/useSections'
+import { buildStudentResult, rankComparator } from '../../utils/grades'
 import Button from '../../components/ui/Button'
 import Select from '../../components/ui/Select'
 import Input from '../../components/ui/Input'
@@ -13,7 +14,7 @@ import {
   ArrowRight, GraduationCap, Users, CheckCircle2,
   AlertTriangle, RefreshCw, ChevronRight, Loader2,
   ArrowUpCircle, Hash, UserCheck, UserX, Info,
-  Sparkles, MoveRight,
+  Trophy, MoveRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -63,17 +64,79 @@ export default function BulkPromotion() {
   const [result,      setResult]      = useState(null)
   const [step,        setStep]        = useState('config') // config | preview | done
 
-  // Fetch students from source class+section
+  // rank map: student_id → { rank, percentage, hasMarks }
+  const [resultMap, setResultMap] = useState({})
+
+  // Fetch students from source class+section, then compute academic ranks
   const fetchStudents = useCallback(async () => {
-    if (!srcClass || !srcSection) { setStudents([]); setSelected(new Set()); return }
+    if (!srcClass || !srcSection) {
+      setStudents([]); setSelected(new Set()); setResultMap({}); return
+    }
     setLoading(true)
+
     const { data } = await supabase
       .from('students').select('id,name,roll,father_name,admission_no')
       .eq('class_name', srcClass).eq('section', srcSection)
       .eq('school_id', user.school_id).eq('is_active', true)
       .order('roll')
-    setStudents(data || [])
-    setSelected(new Set((data || []).map(s => s.id)))
+
+    const studs = data || []
+    setStudents(studs)
+    setSelected(new Set(studs.map(s => s.id)))
+
+    // ── Compute academic ranks from marks ──────────────────────
+    if (studs.length > 0) {
+      const [{ data: cfgRows }, { data: allMarks }] = await Promise.all([
+        supabase.from('config').select('*')
+          .eq('class_name', srcClass).eq('school_id', user.school_id)
+          .order('display_order'),
+        supabase.from('marks')
+          .select('student_id,subject_name,term,written,internal')
+          .in('student_id', studs.map(s => s.id))
+          .eq('school_id', user.school_id),
+      ])
+
+      if (cfgRows?.length) {
+        // Group marks by student
+        const marksByStudent = {}
+        ;(allMarks || []).forEach(m => {
+          if (!marksByStudent[m.student_id]) marksByStudent[m.student_id] = []
+          marksByStudent[m.student_id].push(m)
+        })
+
+        // Build result per student then sort by rankComparator
+        const resultList = studs.map(stu => {
+          const mRows = marksByStudent[stu.id] || []
+          return {
+            student_id: stu.id,
+            hasMarks: mRows.length > 0,
+            ...buildStudentResult(
+              { ...stu, class_name: srcClass, section: srcSection },
+              cfgRows,
+              mRows,
+            ),
+          }
+        })
+
+        // Sort: best academic result first (fewest fails, then highest %)
+        const sorted = [...resultList].sort(rankComparator)
+
+        const rMap = {}
+        sorted.forEach((r, idx) => {
+          rMap[r.student_id] = {
+            rank:       idx + 1,
+            percentage: r.percentage,
+            hasMarks:   r.hasMarks,
+          }
+        })
+        setResultMap(rMap)
+      } else {
+        setResultMap({})
+      }
+    } else {
+      setResultMap({})
+    }
+
     setLoading(false)
   }, [srcClass, srcSection, user.school_id])
 
@@ -92,7 +155,16 @@ export default function BulkPromotion() {
     })
   }
 
-  const selectedStudents = students.filter(s => selected.has(s.id))
+  // Sort selected students by academic rank (best = roll 1 in new class).
+  // Students with no marks data sort last (rank = Infinity).
+  const hasRanks = Object.keys(resultMap).length > 0
+  const selectedStudents = students
+    .filter(s => selected.has(s.id))
+    .sort((a, b) => {
+      const ra = resultMap[a.id]?.rank ?? Infinity
+      const rb = resultMap[b.id]?.rank ?? Infinity
+      return ra - rb
+    })
 
   const canPreview = srcClass && srcSection && tgtClass && tgtSection && selected.size > 0
 
@@ -107,27 +179,23 @@ export default function BulkPromotion() {
     let successCount = 0, failCount = 0
     const startRollNum = parseInt(startRoll) || 1
 
-    // Build updates: each selected student gets new class, section, roll
+    // Build one row per student; school_id included so RLS + upsert both enforce ownership
     const updates = selectedStudents.map((s, idx) => ({
       id:         s.id,
+      school_id:  user.school_id,
       class_name: tgtClass,
       section:    tgtSection,
       roll:       startRollNum + idx,
       updated_at: new Date().toISOString(),
     }))
 
-    // Upsert one by one (could batch, but Supabase update needs per-id)
-    for (const u of updates) {
-      const { error } = await supabase
-        .from('students').update({
-          class_name: u.class_name,
-          section:    u.section,
-          roll:       u.roll,
-          updated_at: u.updated_at,
-        }).eq('id', u.id).eq('school_id', user.school_id)
-      if (error) failCount++
-      else successCount++
-    }
+    // Single batch upsert — one round-trip regardless of class size
+    const { error: batchErr } = await supabase
+      .from('students')
+      .upsert(updates, { onConflict: 'id' })
+
+    if (batchErr) failCount = updates.length
+    else          successCount = updates.length
 
     await logAudit({
       saved_by:    user.user_id,
@@ -149,20 +217,22 @@ export default function BulkPromotion() {
   const reset = () => {
     setSrcClass(''); setSrcSection(''); setTgtClass(''); setTgtSection('')
     setStudents([]); setSelected(new Set()); setStartRoll('1')
-    setResult(null); setStep('config')
+    setResult(null); setStep('config'); setResultMap({})
   }
 
-  // ── Preview rows with new roll numbers ───────────────────────
+  // ── Preview rows sorted by rank → sequential new roll numbers ─
   const previewRows = selectedStudents.map((s, idx) => ({
     ...s,
     newRoll: (parseInt(startRoll) || 1) + idx,
+    rank:    resultMap[s.id]?.rank       ?? null,
+    pct:     resultMap[s.id]?.percentage ?? null,
   }))
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
 
       {/* ── Hero ───────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-indigo-700 to-indigo-800 dark:from-violet-900 dark:via-indigo-900 dark:to-indigo-950 px-6 sm:px-8 py-7">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 px-6 sm:px-8 py-7">
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-white/5 rounded-full blur-3xl" />
         <div className="absolute -bottom-8 -left-8 w-40 h-40 bg-indigo-400/10 rounded-full blur-2xl" />
         <div className="relative flex items-center gap-4">
@@ -223,7 +293,7 @@ export default function BulkPromotion() {
               <table className="min-w-full text-sm">
                 <thead className="sticky top-0 bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur border-b border-gray-100 dark:border-gray-800">
                   <tr>
-                    {['Old Roll', 'Student Name', 'Father\'s Name', 'New Roll'].map(h => (
+                    {['Rank', 'Student Name', "Father's Name", '%', 'New Roll'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
@@ -231,9 +301,20 @@ export default function BulkPromotion() {
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
                   {previewRows.map(s => (
                     <tr key={s.id} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10">
-                      <td className="px-4 py-2.5 tabular-nums text-gray-400 text-xs">{s.roll}</td>
+                      <td className="px-4 py-2.5">
+                        {s.rank != null ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 font-black text-xs ring-1 ring-amber-200 dark:ring-amber-800/40">
+                            <Trophy className="w-3 h-3" />#{s.rank}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 font-semibold text-gray-800 dark:text-gray-200">{s.name}</td>
                       <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 text-xs">{s.father_name || '—'}</td>
+                      <td className="px-4 py-2.5 tabular-nums text-xs text-gray-500 dark:text-gray-400">
+                        {s.pct != null ? `${s.pct.toFixed(1)}%` : '—'}
+                      </td>
                       <td className="px-4 py-2.5">
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 font-black text-xs ring-1 ring-indigo-200 dark:ring-indigo-800/40">
                           <Hash className="w-3 h-3" />{s.newRoll}
@@ -301,7 +382,7 @@ export default function BulkPromotion() {
                     onChange={e => setStartRoll(e.target.value)} placeholder="1" />
                 </div>
                 <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
-                  <Info className="w-3 h-3" /> Students are renumbered in roll order
+                  <Info className="w-3 h-3" /> Roll 1 → best academic rank, then ascending
                 </p>
               </div>
             </div>
@@ -388,6 +469,16 @@ export default function BulkPromotion() {
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Warn if students are loaded but no marks have been entered yet */}
+          {students.length > 0 && !hasRanks && !loading && (
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40">
+              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                No marks found for this class. Roll numbers will be assigned in current roll order until marks are entered.
+              </p>
             </div>
           )}
 

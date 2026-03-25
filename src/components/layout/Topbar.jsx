@@ -1,30 +1,16 @@
 import { useState } from 'react'
-import { Menu, Moon, Sun, LogOut, Bell, Search } from 'lucide-react'
+import { Menu, Moon, Sun, LogOut, GraduationCap } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const PAGE_TITLES = {
-  '/dashboard': 'Dashboard',
-  '/students':  'Students',
-  '/marks':     'Marks Entry',
-  '/results':   'Results',
-  '/analytics': 'Analytics',
-  '/audit':     'Audit Trail',
-  '/users':     'User Management',
-  '/settings':  'Settings',
-}
-
-export default function Topbar({ onMenuClick }) {
-  const { logout, user } = useAuth()
+export default function Topbar({ onMenuClick, collapsed, onToggleCollapse }) {
+  const { logout, user, school } = useAuth()
   const { theme, setTheme } = useTheme()
-  const navigate  = useNavigate()
-  const location  = useLocation()
+  const navigate    = useNavigate()
   const [loggingOut, setLoggingOut] = useState(false)
-
-  const pageTitle = PAGE_TITLES[location.pathname] || 'RMS'
 
   const handleLogout = async () => {
     setLoggingOut(true)
@@ -36,23 +22,57 @@ export default function Topbar({ onMenuClick }) {
   const isDark = theme === 'dark'
 
   return (
-    <header className="h-14 sticky top-0 z-10 flex items-center gap-3 px-4
+    <header className="h-14 z-40 flex items-center gap-3 px-4
       bg-white/80 dark:bg-gray-900/80 backdrop-blur-md glass
       border-b border-gray-100 dark:border-gray-800">
 
-      {/* Mobile menu button */}
+      {/* Mobile: open overlay sidebar */}
       <button
         onClick={onMenuClick}
         className="lg:hidden p-2 rounded-lg text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        aria-label="Open menu"
       >
         <Menu className="w-5 h-5" />
       </button>
 
-      {/* Page title */}
-      <div className="hidden lg:block">
-        <h1 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wide">
-          {pageTitle}
-        </h1>
+      {/* Desktop: collapse / expand sidebar */}
+      <button
+        onClick={onToggleCollapse}
+        className={clsx(
+          'hidden lg:flex p-2 rounded-lg transition-colors',
+          'text-gray-500 hover:text-gray-900 dark:hover:text-white',
+          'hover:bg-gray-100 dark:hover:bg-gray-800',
+          collapsed && 'text-primary-600 dark:text-primary-400'
+        )}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* School branding */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        {school?.logo_url ? (
+          <img
+            src={school.logo_url}
+            alt="School logo"
+            className="w-8 h-8 rounded-lg object-contain bg-white border border-gray-100 dark:border-gray-700 flex-shrink-0 p-0.5"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-sm flex-shrink-0">
+            <GraduationCap className="w-4 h-4 text-white" />
+          </div>
+        )}
+        <div className="min-w-0 hidden sm:block">
+          <p className="font-black text-sm text-gray-900 dark:text-white truncate leading-tight">
+            {school?.school_name || 'School RMS'}
+          </p>
+          {school?.academic_session && (
+            <p className="text-xs text-gray-400 truncate leading-tight">
+              Session: {school.academic_session}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="flex-1" />
@@ -66,9 +86,7 @@ export default function Topbar({ onMenuClick }) {
           className="p-2 rounded-lg text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200"
           title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {isDark
-            ? <Sun className="w-4 h-4" />
-            : <Moon className="w-4 h-4" />}
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
         {/* Divider */}

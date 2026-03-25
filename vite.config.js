@@ -13,7 +13,6 @@ export default defineConfig({
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-ui':       ['lucide-react', 'react-hot-toast', 'recharts'],
           'vendor-excel':    ['exceljs'],
-          'vendor-pdf':      ['html2pdf.js', 'html2canvas', 'jspdf'],
         },
       },
     },

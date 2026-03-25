@@ -32,9 +32,9 @@ type JsonBody = Record<string, unknown>
 
 // ── CORS ──────────────────────────────────────────────────────
 const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Origin':  'https://smartrms.netlify.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sa-id, x-sa-pass',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Max-Age':       '86400',
 }
 
@@ -43,6 +43,23 @@ function respond(body: unknown, status: number): Response {
     status,
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
   })
+}
+
+// ── School search rate limiter (in-memory, best-effort) ───────
+// Resets on cold start. Sufficient for abuse prevention.
+// Max 10 searches/IP/60 s for anonymous callers.
+const _searchRateMap = new Map<string, { count: number; resetAt: number }>()
+
+function checkSearchRateLimit(ip: string, max = 10, windowMs = 60_000): boolean {
+  const now   = Date.now()
+  const entry = _searchRateMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    _searchRateMap.set(ip, { count: 1, resetAt: now + windowMs })
+    return true
+  }
+  if (entry.count >= max) return false
+  entry.count++
+  return true
 }
 
 // ── Auth ──────────────────────────────────────────────────────
@@ -115,17 +132,53 @@ serve(async (req: Request): Promise<Response> => {
     return new Response('ok', { status: 200, headers: CORS_HEADERS })
   }
 
-  if (req.method !== 'POST') {
-    return respond({ error: 'Method not allowed. Use POST.' }, 405)
-  }
-
-  // ── Route extraction ───────────────────────────────────────
+  // ── Route extraction (all methods) ────────────────────────
   let path: string
+  let reqUrl: URL
   try {
-    const url = new URL(req.url)
-    path = url.pathname.replace(/^.*\/rms-api/, '').replace(/\/$/, '') || '/'
+    reqUrl = new URL(req.url)
+    path   = reqUrl.pathname.replace(/^.*\/rms-api/, '').replace(/\/$/, '') || '/'
   } catch {
     return respond({ error: 'Invalid request URL' }, 400)
+  }
+
+  // ── GET /schools/search — public, rate-limited ─────────────
+  if (req.method === 'GET' && path === '/schools/search') {
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown'
+    if (!checkSearchRateLimit(ip)) {
+      console.warn(`[rms-api] search rate-limit hit: ${ip}`)
+      return respond({ error: 'Too many requests. Please wait a moment.' }, 429)
+    }
+
+    const q = (reqUrl.searchParams.get('q') ?? '').trim()
+    if (q.length < 3) return respond([], 200)   // enforce server-side minimum
+
+    // Escape ilike wildcards to prevent injection via pattern chars
+    const safe = q.replace(/[\\%_]/g, '\\$&').slice(0, 100)
+
+    const supabaseUrl    = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !serviceRoleKey)
+      return respond({ error: 'Server configuration error' }, 503)
+
+    const client = createClient(supabaseUrl, serviceRoleKey)
+    const { data, error } = await client
+      .from('schools')
+      .select('school_name, school_code, tagline, academic_session')
+      .eq('is_active', true)
+      .or(`school_name.ilike.%${safe}%,school_code.ilike.%${safe}%`)
+      .limit(10)
+
+    if (error) {
+      console.error('[rms-api] school search error:', error.message)
+      return respond({ error: 'Search failed' }, 500)
+    }
+    console.log(`[rms-api] GET /schools/search q="${q}" → ${(data ?? []).length} results`)
+    return respond(data ?? [], 200)
+  }
+
+  if (req.method !== 'POST') {
+    return respond({ error: 'Method not allowed. Use POST.' }, 405)
   }
 
   console.log(`[rms-api] ${req.method} ${path}`)
@@ -339,7 +392,7 @@ serve(async (req: Request): Promise<Response> => {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from:    'RMS <noreply@yourapp.com>',
+        from:    'RMS <onboarding@resend.dev>',
         to:      [recipientEmail],
         subject: `Password reset for ${userId} — ${schoolName}`,
         html,
@@ -727,7 +780,7 @@ serve(async (req: Request): Promise<Response> => {
         db.from('schools').select('id, plan, is_active, plan_expires_at, created_at'),
         db.from('students').select('id, school_id, created_at').eq('is_active', true),
         db.from('marks').select('id, school_id'),
-        db.from('users').select('id, school_id, role, is_active, last_login'),
+        db.from('users').select('role'),
         db.from('school_registrations').select('id, status, created_at'),
         db.from('entry_logs')
           .select('id, school_id, action_type, created_at')

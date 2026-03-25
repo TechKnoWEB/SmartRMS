@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Select from '../../components/ui/Select'
-import { RefreshCw, Shield, Clock, User, BookOpen, FileText, Activity, Search, Filter, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
+import { RefreshCw, Shield, Clock, User, BookOpen, FileText, Activity, Search, Filter, ChevronDown, ChevronUp, AlertCircle, Trash2 } from 'lucide-react'
 import Button from '../../components/ui/Button'
+import toast from 'react-hot-toast'
 
 const actionColor = (a) => {
   if (!a) return 'gray'
@@ -64,6 +65,30 @@ const colorClasses = {
 
 const getColorClasses = (color) => colorClasses[color] || colorClasses.gray
 
+// Strip internal/backend terminology from user-visible notes
+const TECH_PATTERNS = [
+  // Specific phrases first (order matters)
+  [/\bvia\s+(Edge\s+Function|Supabase|RPC\s+call|serverless\s+function|API\s+call|database\s+trigger)\b/gi, ''],
+  [/\b(Edge\s+Function|Supabase|serverless|RPC|GraphQL|Postgres|PostgreSQL|Realtime)\b/gi, ''],
+  [/\bAPI\b/g, ''],
+  [/\bdatabase\b/gi, 'system'],
+  [/\bDB\b/g, 'system'],
+  [/\btrigger(ed)?\b/gi, 'processed'],
+  // Clean up any double spaces or trailing punctuation left behind
+  [/\s{2,}/g, ' '],
+  [/\s+([,.])/g, '$1'],
+  [/^[\s,]+|[\s,]+$/g, ''],
+]
+
+function sanitizeNotes(text) {
+  if (!text) return text
+  let out = text
+  for (const [pattern, replacement] of TECH_PATTERNS) {
+    out = out.replace(pattern, replacement)
+  }
+  return out.trim() || null
+}
+
 export default function AuditTrail() {
   const { user } = useAuth()
   const [logs,    setLogs]    = useState([])
@@ -72,13 +97,19 @@ export default function AuditTrail() {
   const [expandedRow, setExpandedRow] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+
+  const lsKey = `rms_log_cleared_${user.school_id}`
+  const [clearedBefore, setClearedBefore] = useState(() => localStorage.getItem(lsKey) || null)
 
   const load = async () => {
     setLoading(true)
     let q = supabase.from('entry_logs').select('*')
       .eq('school_id', user.school_id)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
     if (filter.action) q = q.eq('action_type', filter.action)
     const { data } = await q
     setLogs(data || [])
@@ -93,15 +124,22 @@ export default function AuditTrail() {
   ]
   const actionOpts = [{ value:'', label:'All Actions' }, ...actionTypes.map(a => ({ value:a, label:a.replace(/_/g,' ') }))]
 
+  // Apply soft-clear filter unless admin chose to show history
+  const visibleLogs = (clearedBefore && !showHistory)
+    ? logs.filter(log => new Date(log.created_at) > new Date(clearedBefore))
+    : logs
+
+  const hiddenCount = clearedBefore ? logs.filter(log => new Date(log.created_at) <= new Date(clearedBefore)).length : 0
+
   const filteredLogs = searchTerm
-    ? logs.filter(log =>
+    ? visibleLogs.filter(log =>
         (log.saved_by?.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (log.action_type?.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (log.class_name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (log.subject?.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (log.notes?.toLowerCase().includes(searchTerm.toLowerCase()))
       )
-    : logs
+    : visibleLogs
 
   const formatRelativeTime = (dateStr) => {
     const now = new Date()
@@ -118,11 +156,17 @@ export default function AuditTrail() {
     return date.toLocaleDateString()
   }
 
+  // Compact timestamp: "22 Mar, 10:45 AM"
+  const formatCompact = (dateStr) => {
+    const d = new Date(dateStr)
+    return d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  }
+
   const stats = {
-    total: logs.length,
-    saves: logs.filter(l => l.action_type?.includes('SAVE')).length,
-    deletes: logs.filter(l => l.action_type?.includes('DELETE')).length,
-    logins: logs.filter(l => l.action_type?.includes('LOGIN')).length,
+    total: visibleLogs.length,
+    saves: visibleLogs.filter(l => l.action_type?.includes('SAVE')).length,
+    deletes: visibleLogs.filter(l => l.action_type?.includes('DELETE')).length,
+    logins: visibleLogs.filter(l => l.action_type?.includes('LOGIN')).length,
   }
 
   const getStatusColor = (status) => {
@@ -131,35 +175,55 @@ export default function AuditTrail() {
     return 'gray'
   }
 
+  const clearLogs = () => {
+    const now = new Date().toISOString()
+    localStorage.setItem(lsKey, now)
+    setClearedBefore(now)
+    setShowHistory(false)
+    setShowClearConfirm(false)
+    toast.success('Activity log cleared.')
+  }
+
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
       {/* Header Section */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 p-6 md:p-8 shadow-2xl">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 p-6 md:p-8 shadow-xl shadow-primary-600/15 dark:shadow-primary-900/30">
         <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-green-500 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
+          <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
         </div>
         <div className="relative z-10 flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4">
-            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/20 backdrop-blur-sm border border-blue-500/30 shadow-lg shadow-blue-500/10">
-              <Shield className="w-7 h-7 text-blue-400" />
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10 shadow-lg">
+              <Shield className="w-7 h-7 text-white" />
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                Audit Trail
+                Activity Log
               </h1>
-              <p className="text-gray-400 text-sm mt-1 flex items-center gap-2">
+              <p className="text-indigo-200 text-sm mt-1 flex items-center gap-2">
                 <Activity className="w-3.5 h-3.5" />
                 Monitor all system activities and changes
               </p>
             </div>
           </div>
-          <Button variant="secondary" onClick={load} loading={loading}
-            className="!bg-white/10 !text-white !border-white/20 hover:!bg-white/20 backdrop-blur-sm transition-all duration-300 !rounded-xl !px-5 !py-2.5 shadow-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="ml-2">Refresh</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={load} loading={loading}
+              className="!bg-white/10 !text-white !border-white/20 hover:!bg-white/20 backdrop-blur-sm !rounded-xl !px-4 !py-2.5 shadow-lg"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="ml-2">Refresh</span>
+            </Button>
+            {user.role === 'admin' && visibleLogs.length > 0 && (
+              <Button
+                onClick={() => setShowClearConfirm(true)}
+                className="!bg-red-500/20 !text-red-200 !border-red-400/30 hover:!bg-red-500/40 backdrop-blur-sm !rounded-xl !px-4 !py-2.5 shadow-lg"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span className="ml-2">Clear Log</span>
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Stats Row */}
@@ -241,6 +305,34 @@ export default function AuditTrail() {
         </div>
       </Card>
 
+      {/* Hidden-history banner */}
+      {hiddenCount > 0 && !showHistory && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40">
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            <span className="font-semibold">{hiddenCount} older {hiddenCount === 1 ? 'entry' : 'entries'}</span> hidden since last clear.
+          </p>
+          <button
+            onClick={() => setShowHistory(true)}
+            className="text-xs font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300 transition-colors whitespace-nowrap"
+          >
+            Show history
+          </button>
+        </div>
+      )}
+      {showHistory && hiddenCount > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/15 border border-indigo-200 dark:border-indigo-800/40">
+          <p className="text-xs text-indigo-700 dark:text-indigo-400">
+            Showing full history including <span className="font-semibold">{hiddenCount} previously cleared</span> {hiddenCount === 1 ? 'entry' : 'entries'}.
+          </p>
+          <button
+            onClick={() => setShowHistory(false)}
+            className="text-xs font-semibold text-indigo-700 dark:text-indigo-400 underline underline-offset-2 hover:text-indigo-900 dark:hover:text-indigo-300 transition-colors whitespace-nowrap"
+          >
+            Hide history
+          </button>
+        </div>
+      )}
+
       {/* Main Table Card */}
       <Card className="!p-0 !overflow-hidden !rounded-2xl !shadow-lg !border-0 dark:!bg-gray-900/50 backdrop-blur-sm">
         {loading ? (
@@ -249,7 +341,7 @@ export default function AuditTrail() {
               <div className="w-12 h-12 rounded-full border-4 border-gray-200 dark:border-gray-700" />
               <div className="absolute inset-0 w-12 h-12 rounded-full border-4 border-transparent border-t-blue-500 animate-spin" />
             </div>
-            <p className="text-gray-400 text-sm font-medium animate-pulse">Loading audit logs...</p>
+            <p className="text-gray-400 text-sm font-medium animate-pulse">Loading activity logs...</p>
           </div>
         ) : (
           <>
@@ -271,11 +363,20 @@ export default function AuditTrail() {
 
             {/* Desktop Table */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="w-full text-sm table-fixed">
+                <colgroup>
+                  <col className="w-[120px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[75px]" />
+                  <col />
+                </colgroup>
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-900/80">
-                    {['Time', 'Action', 'Performed By', 'Class', 'Subject', 'Status', 'Notes'].map(h => (
-                      <th key={h} className="px-5 py-3.5 text-left text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
+                    {['Time', 'Action', 'Performed By', 'Class', 'Subject', 'Status', 'Details'].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
                         {h}
                       </th>
                     ))}
@@ -288,6 +389,7 @@ export default function AuditTrail() {
                     const cls = getColorClasses(color)
                     const statusColor = getStatusColor(log.status)
                     const statusCls = getColorClasses(statusColor)
+                    const cleanNotes = sanitizeNotes(log.notes)
 
                     return (
                       <tr
@@ -295,60 +397,58 @@ export default function AuditTrail() {
                         className="group hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all duration-200 cursor-pointer"
                         onClick={() => setExpandedRow(expandedRow === log.id ? null : log.id)}
                       >
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                            <div>
-                              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                                {formatRelativeTime(log.created_at)}
-                              </p>
-                              <p className="text-[10px] text-gray-400">
-                                {new Date(log.created_at).toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
+                        <td className="px-3 py-2.5">
+                          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                            {formatRelativeTime(log.created_at)}
+                          </p>
+                          <p className="text-[10px] text-gray-400 whitespace-nowrap">
+                            {formatCompact(log.created_at)}
+                          </p>
                         </td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <IconComponent className={`w-3.5 h-3.5 opacity-60 ${cls.iconText}`} />
-                            <Badge variant={color}>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <IconComponent className={`w-3 h-3 flex-shrink-0 opacity-60 ${cls.iconText}`} />
+                            <Badge variant={color} className="truncate !text-[10px] !py-0 !px-1.5">
                               {log.action_type?.replace(/_/g, ' ')}
                             </Badge>
                           </div>
                         </td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-bold uppercase">
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <div className="flex items-center justify-center w-5 h-5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[9px] font-bold uppercase flex-shrink-0">
                               {log.saved_by?.charAt(0) || '?'}
                             </div>
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{log.saved_by}</span>
+                            <span className="text-[11px] font-medium text-gray-800 dark:text-gray-200 truncate">{log.saved_by}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-3 py-2.5">
                           {log.class_name ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-600 dark:text-gray-300">
-                              {log.class_name} {log.section}
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[10px] font-medium text-gray-600 dark:text-gray-300 truncate max-w-full">
+                              {log.class_name}{log.section ? ` ${log.section}` : ''}
                             </span>
                           ) : (
-                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                            <span className="text-gray-300 dark:text-gray-600 text-[11px]">—</span>
                           )}
                         </td>
-                        <td className="px-5 py-3.5 text-gray-600 dark:text-gray-400">
+                        <td className="px-3 py-2.5 text-[11px] text-gray-600 dark:text-gray-400 truncate">
                           {log.subject || <span className="text-gray-300 dark:text-gray-600">—</span>}
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-3 py-2.5">
                           {log.status ? (
-                            <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusCls.statText}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${statusCls.statDot}`} />
-                              {log.status}
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${statusCls.statText}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusCls.statDot}`} />
+                              <span className="truncate">{log.status}</span>
                             </span>
                           ) : (
-                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                            <span className="text-gray-300 dark:text-gray-600 text-[11px]">—</span>
                           )}
                         </td>
-                        <td className="px-5 py-3.5">
-                          <p className="text-xs text-gray-500 max-w-[180px] truncate group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors" title={log.notes}>
-                            {log.notes || '—'}
+                        <td className="px-3 py-2.5">
+                          <p
+                            className="text-[11px] text-gray-500 truncate group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors"
+                            title={cleanNotes || undefined}
+                          >
+                            {cleanNotes || <span className="text-gray-300 dark:text-gray-600">—</span>}
                           </p>
                         </td>
                       </tr>
@@ -362,7 +462,7 @@ export default function AuditTrail() {
                             <Shield className="w-8 h-8 text-gray-300 dark:text-gray-600" />
                           </div>
                           <div>
-                            <p className="text-gray-500 dark:text-gray-400 font-medium">No audit logs found</p>
+                            <p className="text-gray-500 dark:text-gray-400 font-medium">No activity logs found</p>
                             <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
                               {searchTerm ? 'Try adjusting your search terms' : 'Activity logs will appear here'}
                             </p>
@@ -428,10 +528,10 @@ export default function AuditTrail() {
                           <p className="text-gray-400 font-medium mb-0.5">Full Time</p>
                           <p className="text-gray-700 dark:text-gray-300">{new Date(log.created_at).toLocaleString()}</p>
                         </div>
-                        {log.notes && (
+                        {sanitizeNotes(log.notes) && (
                           <div className="col-span-2">
-                            <p className="text-gray-400 font-medium mb-0.5">Notes</p>
-                            <p className="text-gray-700 dark:text-gray-300">{log.notes}</p>
+                            <p className="text-gray-400 font-medium mb-0.5">Details</p>
+                            <p className="text-gray-700 dark:text-gray-300">{sanitizeNotes(log.notes)}</p>
                           </div>
                         )}
                       </div>
@@ -444,13 +544,40 @@ export default function AuditTrail() {
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                     <Shield className="w-8 h-8 text-gray-300 dark:text-gray-600" />
                   </div>
-                  <p className="text-gray-400 text-sm font-medium">No audit logs found</p>
+                  <p className="text-gray-400 text-sm font-medium">No activity logs found</p>
                 </div>
               )}
             </div>
           </>
         )}
       </Card>
+
+      {/* ── Clear confirmation modal ───────────────────── */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700 w-full max-w-sm p-6 space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white">Clear Activity Log?</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">This will hide all {visibleLogs.length} visible log {visibleLogs.length === 1 ? 'entry' : 'entries'} from view. You can show them again via "Show history".</p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setShowClearConfirm(false)} disabled={clearing} className="!rounded-xl">
+                Cancel
+              </Button>
+              <Button size="sm" onClick={clearLogs} loading={clearing}
+                className="!bg-red-600 hover:!bg-red-700 !border-red-600 !rounded-xl"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Yes, Clear All
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

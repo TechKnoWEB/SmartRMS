@@ -1,5 +1,5 @@
 // src/pages/admin/MarksEntry.jsx
-import { useState, useEffect, useCallback, Fragment, useMemo } from 'react'
+import { useState, useEffect, useCallback, Fragment, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useMarks } from '../../hooks/useMarks'
@@ -15,14 +15,12 @@ import {
   TrendingUp, Eye, Percent, Search, Keyboard,
   ArrowDown, ChevronRight, Sparkles, Info,
   ClipboardList, Target,
+  Upload, FileSpreadsheet, X, CheckCheck, Download,
 } from 'lucide-react'
 
 /* ═══════════════════════════════════════════════════════════════
    TERM THEME TOKENS
    ═══════════════════════════════════════════════════════════════ */
-// FIX 2.7: Mirrors the DB CHECK constraint so invalid values are caught
-// immediately in the UI rather than only on save.
-//   Valid: empty string, a number (incl. decimal), AB, - , —
 const MARKS_REGEX = /^(AB|-|—|\d+(\.\d+)?)$/i
 
 const TERM_THEME = {
@@ -101,40 +99,7 @@ const TERM_THEME = {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   RADIAL PROGRESS RING (SVG)
-   ═══════════════════════════════════════════════════════════════ */
-function RadialProgress({ percent, size = 52, strokeWidth = 4, color }) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (percent / 100) * circumference
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg className="-rotate-90" width={size} height={size}>
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-gray-100 dark:text-gray-700/50"
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-700 ease-out"
-        />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black tabular-nums text-gray-600 dark:text-gray-300">
-        {percent}%
-      </span>
-    </div>
-  )
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TERM STATUS PANEL  (lock state + stats — above marks table)
+   TERM STATUS PANEL  (compact version)
    ═══════════════════════════════════════════════════════════════ */
 function TermStatusPanel({ grids, locks, config, userRole, termList }) {
   const hasInt = config?.has_internal
@@ -155,118 +120,201 @@ function TermStatusPanel({ grids, locks, config, userRole, termList }) {
     return { total, filled, pct }
   }
 
-  const colorMap = { 1: '#3b82f6', 2: '#8b5cf6', 3: '#10b981', 4: '#f97316' }
-
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200/80 dark:ring-gray-800/80 shadow-sm overflow-hidden">
-      {/* Section header */}
-      <div className="px-5 py-3.5 bg-gray-50/80 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-900/20">
-              <BarChart2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <span className="text-xs font-bold text-gray-600 dark:text-gray-300 tracking-wide">
-              Term Status & Progress
-            </span>
-          </div>
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-gray-400">
-            <Info className="w-3 h-3" />
-            <span>Track entry progress across all terms</span>
-          </div>
-        </div>
+      <div className="px-5 py-3 bg-gray-50/80 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+        <BarChart2 className="w-3.5 h-3.5 text-gray-400" />
+        <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Term Status</span>
       </div>
 
-      {/* 3-column term cards */}
       <div className="p-4">
         <div className={`grid grid-cols-1 sm:grid-cols-${Math.min(termList.length, 4)} gap-3`}>
           {termList.map(t => {
-            const theme = TERM_THEME[t]
+            const theme  = TERM_THEME[t]
             const locked = locks[`t${t}`]
-            const max = getMax(t)
-            const stats = getStats(t)
-            const isEditable = !locked || userRole === 'admin'
+            const max    = getMax(t)
+            const stats  = getStats(t)
 
             return (
-              <div
-                key={t}
-                className={`group relative rounded-2xl ${theme.lightBg} ring-1 ${theme.ring} p-4 hover:shadow-md transition-all duration-300 overflow-hidden`}
-              >
-                {/* Decorative accent */}
-                <div className={`absolute -top-6 -right-6 w-16 h-16 rounded-full ${theme.accentBg} opacity-5 blur-xl group-hover:opacity-10 transition-opacity`} />
-
-                {/* Term title + lock row */}
-                <div className="relative flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-3 h-3 rounded-full ${theme.dot} ring-2 ring-white dark:ring-gray-900 shadow-sm`} />
-                    <span className={`font-black text-sm ${theme.text} tracking-tight`}>T{t}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {locked ? (
-                      <span className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ring-1 ${theme.lockBadge}`}>
-                        <Lock className="w-2.5 h-2.5" /> Locked
-                      </span>
-                    ) : (
-                      <span className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ring-1 ${theme.openBadge}`}>
-                        <Unlock className="w-2.5 h-2.5" /> Open
-                      </span>
-                    )}
+              <div key={t} className={`rounded-xl ${theme.lightBg} ring-1 ${theme.ring} px-4 py-3 space-y-2.5`}>
+                {/* Term label + lock */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2.5 h-2.5 rounded-full ${theme.dot}`} />
+                    <span className={`font-black text-sm ${theme.text}`}>T{t}</span>
                     {locked && userRole === 'admin' && (
-                      <span className="flex items-center gap-0.5 text-[9px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ring-1 ring-amber-200/50 dark:ring-amber-800/30 font-semibold" title="Admin override active">
-                        <Shield className="w-2.5 h-2.5" />
-                      </span>
+                      <Shield className="w-3 h-3 text-amber-500" title="Admin override" />
                     )}
                   </div>
+                  {locked ? (
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ring-1 ${theme.lockBadge}`}>
+                      <Lock className="w-2.5 h-2.5" /> Locked
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ring-1 ${theme.openBadge}`}>
+                      <Unlock className="w-2.5 h-2.5" /> Open
+                    </span>
+                  )}
                 </div>
 
-                {/* Radial progress + max marks */}
-                <div className="relative flex items-center gap-4 mb-3">
-                  <RadialProgress percent={stats.pct} color={colorMap[t]} />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-gray-400 font-medium">Written:</span>
-                      <span className={`font-bold tabular-nums ${theme.text}`}>{max.w || '—'}</span>
-                    </div>
-                    {hasInt && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-gray-400 font-medium">Internal:</span>
-                        <span className={`font-bold tabular-nums ${theme.text}`}>{max.i || '—'}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1 text-[10px] text-gray-400 tabular-nums">
-                      <span>{stats.filled}/{stats.total} entered</span>
-                      {stats.pct === 100 && (
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500 ml-1" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Linear progress bar */}
-                <div className="mb-3">
-                  <div className="h-1.5 rounded-full bg-white/60 dark:bg-gray-700/40 overflow-hidden">
+                {/* Progress bar */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-white/60 dark:bg-gray-700/40 overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${theme.dot} transition-all duration-700 ease-out`}
+                      className={`h-full rounded-full ${theme.dot} transition-all duration-700`}
                       style={{ width: `${stats.pct}%` }}
                     />
                   </div>
+                  <span className={`text-[10px] font-bold tabular-nums ${theme.text}`}>{stats.pct}%</span>
                 </div>
 
-                {/* Editable indicator */}
-                <div className={`pt-3 border-t ${locked ? 'border-red-200/30 dark:border-red-800/20' : 'border-gray-200/40 dark:border-gray-700/30'}`}>
-                  {isEditable ? (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      <PenLine className="w-3 h-3" /> Ready to edit
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-red-400">
-                      <Lock className="w-3 h-3" /> Read-only for teachers
-                    </span>
-                  )}
+                {/* Counts + max */}
+                <div className="flex items-center justify-between text-[10px] text-gray-400">
+                  <span className="tabular-nums">
+                    {stats.filled}/{stats.total} entered
+                    {stats.pct === 100 && <CheckCircle2 className="w-3 h-3 text-emerald-500 inline ml-1" />}
+                  </span>
+                  <span>Max {max.w || '—'}{hasInt ? ` / ${max.i || '—'}` : ''}</span>
                 </div>
               </div>
             )
           })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPORT PREVIEW MODAL
+   ═══════════════════════════════════════════════════════════════ */
+function ImportPreviewModal({ rows, termList, hasInt, onApply, onClose }) {
+  const valid   = rows.filter(r => r.student && r.errors.length === 0)
+  const skipped = rows.filter(r => !r.student)
+  const errored = rows.filter(r => r.student && r.errors.length > 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700 w-full sm:max-w-5xl max-h-[90vh] sm:max-h-[80vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
+              <FileSpreadsheet className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100">Import Preview</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                <span className="text-emerald-600 font-semibold">{valid.length} ready</span>
+                {errored.length > 0 && <> · <span className="text-red-500 font-semibold">{errored.length} with errors</span></>}
+                {skipped.length > 0 && <> · <span className="text-amber-500 font-semibold">{skipped.length} unmatched</span></>}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-auto flex-1">
+          <table className="min-w-full text-xs">
+            <thead className="sticky top-0 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider w-14">Roll</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider min-w-[120px]">Student</th>
+                {termList.map(t => (
+                  <Fragment key={t}>
+                    <th className="px-3 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">T{t} Wrt</th>
+                    {hasInt && <th className="px-3 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">T{t} Int</th>}
+                  </Fragment>
+                ))}
+                <th className="px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const rowBg = !r.student
+                  ? 'bg-amber-50/60 dark:bg-amber-900/10'
+                  : r.errors.length > 0
+                    ? 'bg-red-50/60 dark:bg-red-900/10'
+                    : i % 2 === 0
+                      ? 'bg-white dark:bg-gray-900'
+                      : 'bg-gray-50/50 dark:bg-gray-800/30'
+                return (
+                  <tr key={i} className={`${rowBg} border-b border-gray-100 dark:border-gray-800/50`}>
+                    <td className="px-3 py-2 font-bold tabular-nums text-gray-600 dark:text-gray-300">{r.roll}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                      {r.student
+                        ? <span className="font-medium">{r.student.name}</span>
+                        : <span className="text-amber-500 text-[11px] font-semibold">No match for roll {r.roll}</span>
+                      }
+                    </td>
+                    {termList.map(t => {
+                      const v = r.values[`t${t}`] || {}
+                      return (
+                        <Fragment key={t}>
+                          <td className="px-3 py-2 text-center font-mono tabular-nums text-gray-700 dark:text-gray-300">
+                            {v.written !== '' ? v.written : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                          </td>
+                          {hasInt && (
+                            <td className="px-3 py-2 text-center font-mono tabular-nums text-gray-700 dark:text-gray-300">
+                              {v.internal !== '' ? v.internal : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                            </td>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                    <td className="px-3 py-2">
+                      {!r.student ? (
+                        <span className="inline-flex text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full ring-1 ring-amber-200 dark:ring-amber-800/40">
+                          Skipped
+                        </span>
+                      ) : r.errors.length > 0 ? (
+                        <span
+                          className="inline-flex text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full ring-1 ring-red-200 dark:ring-red-800/40 cursor-help"
+                          title={r.errors.join('\n')}
+                        >
+                          {r.errors.length} error{r.errors.length > 1 ? 's' : ''}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full ring-1 ring-emerald-200 dark:ring-emerald-800/40">
+                          <CheckCheck className="w-2.5 h-2.5" /> Ready
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/50 rounded-b-2xl flex-shrink-0">
+          <p className="text-[11px] text-gray-400">
+            Rows with errors or unmatched rolls are skipped automatically.
+          </p>
+          <div className="flex gap-2.5">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onApply(valid)}
+              disabled={valid.length === 0}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors shadow-sm"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              Apply {valid.length} row{valid.length !== 1 ? 's' : ''}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -288,9 +336,13 @@ export default function MarksEntry() {
   const [locks,       setLocks]       = useState({ t1: false, t2: false, t3: false, t4: false })
   const [grids,       setGrids]       = useState({ t1: [], t2: [], t3: [], t4: [] })
   const [loadingGrid, setLoadingGrid] = useState(false)
-  const [saving,      setSaving]      = useState(null)
-  // FIX 2.7/2.8: keyed by `t${term}_${idx}_${field}` → error string | null
+  const [saving,      setSaving]      = useState(null)   // term# in-flight (prevents double-save)
+  const [savedTerms,  setSavedTerms]  = useState(new Set()) // terms showing optimistic "Saved ✓"
+  const committedGridsRef = useRef({})                   // last DB-confirmed state per term key
   const [cellErrors,  setCellErrors]  = useState({})
+  const [importRows,  setImportRows]  = useState([])
+  const [importOpen,  setImportOpen]  = useState(false)
+  const importInputRef = useRef(null)
 
   const { sectionOpts } = useSections(filter.class_name)
 
@@ -319,7 +371,6 @@ export default function MarksEntry() {
     async function load() {
       setLoadingGrid(true)
 
-      // Fetch school max_terms and term locks in parallel
       const [schoolRes, lockRes] = await Promise.all([
         supabase.from('schools').select('max_terms').eq('id', user.school_id).single(),
         supabase.from('term_locks')
@@ -343,12 +394,11 @@ export default function MarksEntry() {
 
       const gridsResult = await fetchMarksAllTerms(class_name, section, subject)
       setGrids(gridsResult)
+      committedGridsRef.current = gridsResult   // baseline for rollback
+      setSavedTerms(new Set())                  // clear stale indicators
       setLoadingGrid(false)
     }
     load()
-  // FIX 2.2: Use primitive values instead of the filter object reference.
-  // An object dep causes a new reference on every render, which can trigger
-  // cascading re-fetches when parent state updates recreate canAccessClass.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter.class_name, filter.section, filter.subject, subjects])
 
@@ -356,21 +406,66 @@ export default function MarksEntry() {
     const termKey = `t${termNum}`
     const grid = grids[termKey]
     if (!grid || grid.length === 0) return
+    if (saving === termNum) return                        // already in-flight
 
-    setSaving(termNum)
+    // Block save when any cell has a validation error
+    if (termHasErrors(termNum)) {
+      const firstErrKey = Object.entries(cellErrors)
+        .find(([k, v]) => k.startsWith(`t${termNum}_`) && v !== null)?.[0]
+      if (firstErrKey) {
+        const [, row, field] = firstErrKey.split('_')
+        const el = document.querySelector(
+          `[data-term="${termNum}"][data-row="${row}"][data-field="${field}"]`
+        )
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.focus()
+        }
+      }
+      toast.error(`Fix errors in Term ${termNum} before saving.`)
+      return
+    }
+
+    // Snapshot last committed state so we can roll back on error
+    const snapshot = committedGridsRef.current[termKey]
+      ? [...committedGridsRef.current[termKey]]
+      : [...grid]
+
+    // ── Optimistic: mark as saved immediately ────────────────
+    setSavedTerms(prev => new Set(prev).add(termNum))
+    setSaving(termNum)                                    // block double-save
+
     const res = await saveMarks({
-      className: filter.class_name,
-      section: filter.section,
+      className:   filter.class_name,
+      section:     filter.section,
       subjectName: filter.subject,
-      term: termNum,
-      marksArr: grid,
+      term:        termNum,
+      marksArr:    grid,
     })
     setSaving(null)
 
     if (!res.success) {
-      toast.error(res.message || 'Save failed.')
+      // ── Rollback: revert cells + remove optimistic indicator ─
+      setGrids(prev => ({ ...prev, [termKey]: snapshot }))
+      setSavedTerms(prev => { const n = new Set(prev); n.delete(termNum); return n })
+      toast.error(res.message || 'Save failed — changes reverted.')
       return
     }
+
+    if (res.queued) {
+      toast('Offline — Term ' + termNum + ' queued, will sync when reconnected.', { icon: '📶' })
+      // Keep optimistic indicator; the queue drain will persist the data
+      return
+    }
+
+    // ── Commit: update baseline so future rollbacks use this state
+    committedGridsRef.current = { ...committedGridsRef.current, [termKey]: [...grid] }
+
+    // Auto-dismiss the "Saved ✓" indicator after 2.5 s
+    setTimeout(() => {
+      setSavedTerms(prev => { const n = new Set(prev); n.delete(termNum); return n })
+    }, 2500)
+
     if (res.partialErrors?.length > 0) {
       toast(`Saved ${res.changedCells} rows. ${res.partialErrors.length} failed.`, { icon: '⚠️' })
     } else {
@@ -380,19 +475,17 @@ export default function MarksEntry() {
           : `Term ${termNum} saved.`,
       )
     }
-  }, [filter, grids, saveMarks])
+  }, [filter, grids, saving, saveMarks])
 
   const handleCellChange = (termNum, studentIdx, field, value) => {
     const termKey  = `t${termNum}`
     const errorKey = `t${termNum}_${studentIdx}_${field}`
 
-    // FIX 2.7: Format validation — must match DB CHECK constraint or be empty
     let formatError = null
     if (value !== '' && !MARKS_REGEX.test(value)) {
       formatError = 'Use a number, AB, - or —'
     }
 
-    // FIX 2.8: Range validation — written/internal must not exceed configured max
     let rangeError = null
     if (!formatError && value !== '' && config) {
       const maxMap = {
@@ -419,7 +512,6 @@ export default function MarksEntry() {
     }))
   }
 
-  // Returns true if any cell in this term has a validation error
   const termHasErrors = (termNum) =>
     Object.entries(cellErrors).some(([k, v]) => k.startsWith(`t${termNum}_`) && v !== null)
 
@@ -445,8 +537,6 @@ export default function MarksEntry() {
 
   const isEditable = (t) => !locks[`t${t}`] || user.role === 'admin'
 
-  // FIX 2.1: getFilled inlined into useMemo so all accessed state is
-  // explicitly in the dependency array — no stale-closure risk.
   const overallProgress = useMemo(() => {
     const countFilled = (t) => {
       const rows = grids[`t${t}`] || []
@@ -458,26 +548,169 @@ export default function MarksEntry() {
     return Math.round((filled / totalCells) * 100)
   }, [grids, students, maxTerms, termList])
 
-  // Thin wrapper used in the save-button footer; reads from grids which is
-  // already tracked via overallProgress — safe to keep as a plain function.
   const getFilled = (t) => {
     const rows = grids[`t${t}`] || []
     return rows.filter(r => r.written !== '' && r.written != null).length
+  }
+
+  function parseAndValidateImport(rawRows) {
+    return rawRows
+      .filter(r => r['Roll'] != null && String(r['Roll']).trim() !== '')
+      .map(r => {
+        const roll    = String(r['Roll']).trim()
+        const student = students.find(s => String(s.roll) === roll) || null
+        const values  = {}
+        const errors  = []
+
+        termList.forEach(t => {
+          const w   = String(r[`T${t} Written`]  ?? '').trim()
+          const int = hasInt ? String(r[`T${t} Internal`] ?? '').trim() : ''
+
+          if (w !== '' && !MARKS_REGEX.test(w)) {
+            errors.push(`T${t} Written: invalid value "${w}"`)
+          } else if (w !== '' && config) {
+            const maxW = [0, config.max_t1, config.max_t2, config.max_t3, config.max_t4][t]
+            const num  = parseFloat(w)
+            if (!isNaN(num) && maxW > 0 && num > maxW)
+              errors.push(`T${t} Written: max is ${maxW}`)
+          }
+
+          if (hasInt) {
+            if (int !== '' && !MARKS_REGEX.test(int)) {
+              errors.push(`T${t} Internal: invalid value "${int}"`)
+            } else if (int !== '' && config) {
+              const maxI = [0, config.max_t1_int, config.max_t2_int, config.max_t3_int, config.max_t4_int][t]
+              const num  = parseFloat(int)
+              if (!isNaN(num) && maxI > 0 && num > maxI)
+                errors.push(`T${t} Internal: max is ${maxI}`)
+            }
+          }
+
+          values[`t${t}`] = { written: w, internal: int }
+        })
+
+        return { roll, student, values, errors }
+      })
+  }
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    try {
+      const ext     = file.name.split('.').pop().toLowerCase()
+      let rawRows   = []
+
+      if (ext === 'csv') {
+        const text    = await file.text()
+        const lines   = text.trim().split(/\r?\n/)
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''))
+        rawRows = lines.slice(1)
+          .filter(l => l.trim())
+          .map(line => {
+            const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+            const obj  = {}
+            headers.forEach((h, i) => { obj[h] = vals[i] ?? '' })
+            return obj
+          })
+      } else {
+        const buf            = await file.arrayBuffer()
+        const { default: ExcelJS } = await import('exceljs')
+        const wb             = new ExcelJS.Workbook()
+        await wb.xlsx.load(buf)
+        const ws             = wb.worksheets[0]
+        const headers        = []
+        ws.getRow(1).eachCell({ includeEmpty: true }, cell => {
+          headers.push(String(cell.value ?? '').trim())
+        })
+        ws.eachRow({ includeEmpty: false }, (row, rowNum) => {
+          if (rowNum === 1) return
+          const obj = {}
+          row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+            const h = headers[colNum - 1]
+            if (h) obj[h] = cell.value != null ? String(cell.value) : ''
+          })
+          if (obj['Roll']) rawRows.push(obj)
+        })
+      }
+
+      setImportRows(parseAndValidateImport(rawRows))
+      setImportOpen(true)
+    } catch (err) {
+      toast.error('Could not read file: ' + err.message)
+    }
+  }
+
+  function applyImport(validRows) {
+    setGrids(prev => {
+      const next = {}
+      termList.forEach(t => {
+        const key  = `t${t}`
+        next[key]  = (prev[key] || []).map(row => {
+          const match = validRows.find(r => r.student.student_id === row.student_id)
+          if (!match) return row
+          const v = match.values[key]
+          return { ...row, written: v.written, internal: v.internal }
+        })
+      })
+      Object.keys(prev).forEach(k => { if (!next[k]) next[k] = prev[k] })
+      return next
+    })
+    setImportOpen(false)
+    toast.success(`Imported marks for ${validRows.length} student${validRows.length !== 1 ? 's' : ''}.`)
+  }
+
+  async function downloadTemplate() {
+    try {
+      const { default: ExcelJS } = await import('exceljs')
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet('Marks Import')
+
+      const headers = ['Roll', 'Name']
+      termList.forEach(t => {
+        headers.push(`T${t} Written`)
+        if (hasInt) headers.push(`T${t} Internal`)
+      })
+      ws.addRow(headers)
+      ws.getRow(1).font = { bold: true }
+      ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EAF6' } }
+      headers.forEach((_, i) => { ws.getColumn(i + 1).width = i < 2 ? 12 : 14 })
+
+      students.forEach(stu => {
+        const row = [stu.roll, stu.name]
+        termList.forEach(t => {
+          const existing = grids[`t${t}`]?.find(r => r.student_id === stu.student_id)
+          row.push(existing?.written  ?? '')
+          if (hasInt) row.push(existing?.internal ?? '')
+        })
+        ws.addRow(row)
+      })
+
+      const buf  = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `marks_${filter.class_name}_${filter.section}_${filter.subject.replace(/\s+/g, '_')}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error('Could not create template: ' + err.message)
+    }
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
 
       {/* ═══ HERO HEADER ═══════════════════════════════════════ */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 dark:from-indigo-800 dark:via-indigo-900 dark:to-purple-900 px-6 sm:px-8 py-7">
-        {/* Decorative */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 px-6 sm:px-8 py-7">
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-2xl" />
         <div className="absolute -bottom-12 -left-12 w-56 h-56 bg-purple-400/10 rounded-full blur-3xl" />
         <div className="absolute top-6 right-24 w-2 h-2 bg-white/20 rounded-full" />
         <div className="absolute bottom-8 right-48 w-1.5 h-1.5 bg-white/15 rounded-full" />
 
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Left */}
           <div className="flex items-center gap-4">
             <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10">
               <PenLine className="w-6 h-6 text-white" />
@@ -492,7 +725,6 @@ export default function MarksEntry() {
             </div>
           </div>
 
-          {/* Right: Context badges */}
           {anySelected && !loadingGrid && hasStudents && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/90 text-xs font-bold border border-white/10">
@@ -599,7 +831,7 @@ export default function MarksEntry() {
               All three terms will load together so you can enter marks side by side
             </p>
             <div className="flex items-center gap-6 mt-6">
-              {[1,2,3,4].map(t => (
+              {[1,2,3].map(t => (
                 <div key={t} className="flex items-center gap-1.5 text-xs text-gray-300 dark:text-gray-600">
                   <div className={`w-2.5 h-2.5 rounded-full ${TERM_THEME[t].dot} opacity-40`} />
                   <span className="font-semibold">T{t}</span>
@@ -667,7 +899,8 @@ export default function MarksEntry() {
             </div>
           )}
 
-          {/* ── Hints bar: keyboard nav + FIX 4.6 special values ── */}
+          {/* ── Hints bar ── */}
+          {/*
           <div className="hidden md:flex items-center justify-between gap-4 px-1">
             <div className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
               <Keyboard className="w-3.5 h-3.5" />
@@ -677,7 +910,6 @@ export default function MarksEntry() {
                 to move to next row
               </span>
             </div>
-            {/* FIX 4.6: Remind data-entry staff which special values are accepted */}
             <div className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
               <span className="font-semibold text-gray-500 dark:text-gray-400">Special values:</span>
               {[
@@ -694,26 +926,70 @@ export default function MarksEntry() {
               ))}
               <span className="text-gray-400 dark:text-gray-600 text-[10px]">— hover for meaning</span>
             </div>
+          </div> */}
+
+          {/* ── Import / Template bar ── */}
+          <div className="flex items-center justify-between gap-3 px-1">
+            <p className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+              <FileSpreadsheet className="w-3.5 h-3.5 flex-shrink-0" />
+              Download the template, fill in marks offline, then import back.
+            </p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={downloadTemplate}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 hover:ring-indigo-300 dark:hover:ring-indigo-600 hover:text-indigo-700 dark:hover:text-indigo-400 transition-all shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Template
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+            </div>
           </div>
+
+          {/* Hidden file input for import */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,.xlsx"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+
+          {/* Import preview modal */}
+          {importOpen && (
+            <ImportPreviewModal
+              rows={importRows}
+              termList={termList}
+              hasInt={hasInt}
+              onApply={applyImport}
+              onClose={() => setImportOpen(false)}
+            />
+          )}
 
           {/* ── 3. DESKTOP UNIFIED TABLE ── */}
           <div className="hidden md:block rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200/80 dark:ring-gray-800/80 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-20">
-                  {/* Row 1: Term group banners */}
-                  <tr>
+                  {/* Row 1: Term group headers */}
+                  <tr className="bg-gray-50 dark:bg-gray-800">
                     <th
                       rowSpan={2}
-                      className="sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest w-14 border-b-2 border-gray-200 dark:border-gray-700 border-r border-gray-100 dark:border-gray-800"
+                      className="sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider w-14 border-b-2 border-gray-200 dark:border-gray-700 border-r border-gray-100 dark:border-gray-800"
                     >
-                      <Hash className="w-3 h-3 inline" />
+                      #
                     </th>
                     <th
                       rowSpan={2}
-                      className="sticky left-[56px] z-30 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest min-w-[140px] border-b-2 border-gray-200 dark:border-gray-700 border-r-2 border-gray-300 dark:border-gray-600"
+                      className="sticky left-[56px] z-30 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider min-w-[140px] border-b-2 border-gray-200 dark:border-gray-700 border-r-2 border-gray-300 dark:border-gray-600"
                     >
-                      Student
+                      Students
                     </th>
 
                     {termList.map(t => {
@@ -722,14 +998,12 @@ export default function MarksEntry() {
                         <th
                           key={t}
                           colSpan={colsPerTerm}
-                          className={`px-2 py-0 text-center border-b border-gray-100 dark:border-gray-800 ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}
+                          className={`px-3 py-2.5 text-center border-b border-gray-100 dark:border-gray-800 ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}
                         >
-                          <div className={`rounded-xl ${theme.headerBg} px-3 py-2.5 my-1.5 mx-0.5`}>
-                            <div className="flex items-center justify-center gap-2">
-                              <div className={`w-2.5 h-2.5 rounded-full ${theme.dot} ring-2 ring-white dark:ring-gray-900 shadow-sm`} />
-                              <span className={`font-black text-xs tracking-tight ${theme.text}`}>T{t}</span>
-                              {locks[`t${t}`] && <Lock className="w-3 h-3 text-red-400" />}
-                            </div>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className={`w-2 h-2 rounded-full ${theme.dot}`} />
+                            <span className={`font-bold text-xs ${theme.text}`}>T{t}</span>
+                            {locks[`t${t}`] && <Lock className="w-2.5 h-2.5 text-red-400" />}
                           </div>
                         </th>
                       )
@@ -743,12 +1017,12 @@ export default function MarksEntry() {
                       const max = getMax(t)
                       return (
                         <Fragment key={t}>
-                          <th className={`px-3 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest ${!hasInt && t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}>
-                            Wrt{max.w ? <span className="normal-case font-medium text-gray-300 dark:text-gray-500"> ({max.w})</span> : ''}
+                          <th className={`px-3 py-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider ${!hasInt && t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}>
+                            WRT{max.w ? <span className="normal-case font-medium text-gray-300 dark:text-gray-500"> ({max.w})</span> : ''}
                           </th>
                           {hasInt && (
-                            <th className={`px-3 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}>
-                              Int{max.i ? <span className="normal-case font-medium text-gray-300 dark:text-gray-500"> ({max.i})</span> : ''}
+                            <th className={`px-3 py-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}>
+                              INT{max.i ? <span className="normal-case font-medium text-gray-300 dark:text-gray-500"> ({max.i})</span> : ''}
                             </th>
                           )}
                         </Fragment>
@@ -766,7 +1040,6 @@ export default function MarksEntry() {
                         className={`group transition-colors duration-150 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10
                           ${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/40 dark:bg-gray-800/20'}`}
                       >
-                        {/* Roll */}
                         <td className={`sticky left-0 z-10 px-3 py-[7px] border-r border-gray-100 dark:border-gray-800
                           ${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800/40'}
                           group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/10 transition-colors duration-150`}>
@@ -775,7 +1048,6 @@ export default function MarksEntry() {
                           </span>
                         </td>
 
-                        {/* Name */}
                         <td className={`sticky left-[56px] z-10 px-3 py-[7px] border-r-2 border-gray-200 dark:border-gray-700
                           ${isEven ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800/40'}
                           group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/10 transition-colors duration-150`}>
@@ -784,7 +1056,6 @@ export default function MarksEntry() {
                           </span>
                         </td>
 
-                        {/* Term inputs */}
                         {termList.map(t => {
                           const termKey = `t${t}`
                           const theme = TERM_THEME[t]
@@ -895,63 +1166,64 @@ export default function MarksEntry() {
                 </tbody>
 
                 {/* ── TFOOT: Save buttons ── */}
-<tfoot className="sticky bottom-0 z-20">
-  <tr className="bg-gray-50 dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700">
-    <td className="sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 border-r border-gray-100 dark:border-gray-800" />
-    <td className="sticky left-[56px] z-30 bg-gray-50 dark:bg-gray-800 px-3 py-3.5 border-r-2 border-gray-300 dark:border-gray-600">
-      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-        {students.length} students
-      </span>
-    </td>
+                <tfoot className="sticky bottom-0 z-20">
+                  <tr className="bg-gray-50 dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700">
+                    <td className="sticky left-0 z-30 bg-gray-50 dark:bg-gray-800 border-r border-gray-100 dark:border-gray-800" />
+                    <td className="sticky left-[56px] z-30 bg-gray-50 dark:bg-gray-800 px-3 py-3.5 border-r-2 border-gray-300 dark:border-gray-600">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        {students.length} students
+                      </span>
+                    </td>
 
-    {termList.map(t => {
-      const theme = TERM_THEME[t]
-      const editable = isEditable(t)
-      const filled = getFilled(t)
-      const hasErrors = termHasErrors(t)
+                    {termList.map(t => {
+                      const theme = TERM_THEME[t]
+                      const editable = isEditable(t)
+                      const filled = getFilled(t)
+                      const hasErrors = termHasErrors(t)
 
-      return (
-        <td
-          key={t}
-          colSpan={colsPerTerm}
-          className={`px-2 py-3.5 text-center ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}
-        >
-          {!editable ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-red-400 font-semibold">
-              <Lock className="w-3 h-3" />
-              Locked
-            </span>
-          ) : hasErrors ? (
-            <div className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800/40 min-w-[130px] justify-center">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Fix errors
-            </div>
-          ) : (
-            <button
-              onClick={() => handleSave(t)}
-              disabled={saving === t}
-              className={[
-                'inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-white text-xs font-bold',
-                theme.saveBg,
-                'transition-all duration-200',
-                'disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97]',
-                'shadow-sm hover:shadow-md hover:-translate-y-0.5',
-                'min-w-[130px]',
-              ].join(' ')}
-            >
-              {saving === t ? (
-                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              {saving === t ? 'Saving…' : `Save T${t}`}
-            </button>
-          )}
-        </td>
-      )
-    })}
-  </tr>
-</tfoot>
+                      return (
+                        <td
+                          key={t}
+                          colSpan={colsPerTerm}
+                          className={`px-2 py-3.5 text-center ${t < maxTerms ? `border-r-2 ${theme.colBorder}` : ''}`}
+                        >
+                          {!editable ? (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] text-red-400 font-semibold">
+                              <Lock className="w-3 h-3" />
+                              Locked
+                            </span>
+                          ) : hasErrors ? (
+                            <div className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 text-xs font-bold ring-1 ring-red-200 dark:ring-red-800/40 min-w-[130px] justify-center">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              Fix errors
+                            </div>
+                          ) : savedTerms.has(t) ? (
+                            <div className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 dark:bg-emerald-600 text-white text-xs font-bold shadow-sm min-w-[130px] transition-all duration-300">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Saved T{t}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleSave(t)}
+                              disabled={saving === t}
+                              className={[
+                                'inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-white text-xs font-bold',
+                                theme.saveBg,
+                                'transition-all duration-200',
+                                'disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97]',
+                                'shadow-sm hover:shadow-md hover:-translate-y-0.5',
+                                'min-w-[130px]',
+                              ].join(' ')}
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              Save T{t}
+                            </button>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -971,7 +1243,6 @@ export default function MarksEntry() {
                 </div>
 
                 <div className="p-4">
-                  {/* Term labels */}
                   <div className={`grid grid-cols-${maxTerms} gap-2 mb-3`}>
                     {termList.map(t => {
                       const theme = TERM_THEME[t]
@@ -985,33 +1256,39 @@ export default function MarksEntry() {
                     })}
                   </div>
 
-                  {/* Written */}
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">Written</label>
                   <div className={`grid grid-cols-${maxTerms} gap-2 mb-3`}>
                     {termList.map(t => {
                       const theme = TERM_THEME[t]
                       const row = grids[`t${t}`]?.[i] || {}
                       const editable = isEditable(t)
+                      const errMsg = cellErrors[`t${t}_${i}_written`]
                       return (
-                        <input
-                          key={t}
-                          type="text"
-                          inputMode="numeric"
-                          disabled={!editable}
-                          value={row.written ?? ''}
-                          onChange={e => handleCellChange(t, i, 'written', e.target.value)}
-                          placeholder="—"
-                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-3
-                            text-center text-sm font-bold tabular-nums bg-white dark:bg-gray-800
-                            ${theme.inputFocus} focus:outline-none focus:ring-2
-                            disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800/50
-                            transition-shadow hover:shadow-sm`}
-                        />
+                        <div key={t} className="flex flex-col gap-1">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            disabled={!editable}
+                            value={row.written ?? ''}
+                            onChange={e => handleCellChange(t, i, 'written', e.target.value)}
+                            placeholder="—"
+                            className={`w-full border rounded-xl px-3 py-3
+                              text-center text-sm font-bold tabular-nums bg-white dark:bg-gray-800
+                              ${errMsg
+                                ? 'border-red-400 dark:border-red-500 focus:ring-red-400/50'
+                                : `border-gray-200 dark:border-gray-700 ${theme.inputFocus}`}
+                              focus:outline-none focus:ring-2
+                              disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800/50
+                              transition-shadow hover:shadow-sm`}
+                          />
+                          {errMsg && (
+                            <p className="text-[10px] text-red-500 dark:text-red-400 font-semibold text-center leading-tight">{errMsg}</p>
+                          )}
+                        </div>
                       )
                     })}
                   </div>
 
-                  {/* Internal */}
                   {hasInt && (
                     <>
                       <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">Internal</label>
@@ -1020,21 +1297,29 @@ export default function MarksEntry() {
                           const theme = TERM_THEME[t]
                           const row = grids[`t${t}`]?.[i] || {}
                           const editable = isEditable(t)
+                          const errMsg = cellErrors[`t${t}_${i}_internal`]
                           return (
-                            <input
-                              key={t}
-                              type="text"
-                              inputMode="numeric"
-                              disabled={!editable}
-                              value={row.internal ?? ''}
-                              onChange={e => handleCellChange(t, i, 'internal', e.target.value)}
-                              placeholder="—"
-                              className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-3
-                                text-center text-sm font-bold tabular-nums bg-white dark:bg-gray-800
-                                ${theme.inputFocus} focus:outline-none focus:ring-2
-                                disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800/50
-                                transition-shadow hover:shadow-sm`}
-                            />
+                            <div key={t} className="flex flex-col gap-1">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                disabled={!editable}
+                                value={row.internal ?? ''}
+                                onChange={e => handleCellChange(t, i, 'internal', e.target.value)}
+                                placeholder="—"
+                                className={`w-full border rounded-xl px-3 py-3
+                                  text-center text-sm font-bold tabular-nums bg-white dark:bg-gray-800
+                                  ${errMsg
+                                    ? 'border-red-400 dark:border-red-500 focus:ring-red-400/50'
+                                    : `border-gray-200 dark:border-gray-700 ${theme.inputFocus}`}
+                                  focus:outline-none focus:ring-2
+                                  disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800/50
+                                  transition-shadow hover:shadow-sm`}
+                              />
+                              {errMsg && (
+                                <p className="text-[10px] text-red-500 dark:text-red-400 font-semibold text-center leading-tight">{errMsg}</p>
+                              )}
+                            </div>
                           )
                         })}
                       </div>
@@ -1054,11 +1339,28 @@ export default function MarksEntry() {
                 {termList.map(t => {
                   const theme = TERM_THEME[t]
                   const editable = isEditable(t)
+                  const hasErrors = termHasErrors(t)
 
                   if (!editable) {
                     return (
                       <div key={t} className="flex items-center justify-center gap-1 py-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-[11px] text-red-400 font-semibold ring-1 ring-gray-200/50 dark:ring-gray-700">
                         <Lock className="w-3 h-3" /> T{t}
+                      </div>
+                    )
+                  }
+                  if (savedTerms.has(t)) {
+                    return (
+                      <div key={t} className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-emerald-500 dark:bg-emerald-600 text-white text-[11px] font-bold shadow-sm transition-all duration-300">
+                        <CheckCircle2 className="w-3 h-3" />
+                        T{t}
+                      </div>
+                    )
+                  }
+                  if (hasErrors) {
+                    return (
+                      <div key={t} className="flex items-center justify-center gap-1 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 text-[11px] font-bold ring-1 ring-red-200 dark:ring-red-800/40">
+                        <AlertTriangle className="w-3 h-3" />
+                        Fix T{t}
                       </div>
                     )
                   }
@@ -1072,11 +1374,7 @@ export default function MarksEntry() {
                         disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97]
                         shadow-sm hover:shadow-md`}
                     >
-                      {saving === t ? (
-                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <Save className="w-3 h-3" />
-                      )}
+                      <Save className="w-3 h-3" />
                       T{t}
                     </button>
                   )

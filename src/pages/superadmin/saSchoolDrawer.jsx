@@ -2,7 +2,7 @@
 // UPDATED: Added "Reset Admin Password" section in the Overview tab.
 // Super admin can reset any school's admin user password directly.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { callApi, FEATURES, PLAN_FEATURES, DEF_FEATURES, PLANS } from './saConstants'
 import { useToast, PlanBadge, ConfirmDialog, Tooltip } from './saComponents'
 import {
@@ -73,40 +73,59 @@ export function SchoolRow({ school, creds, onUpdated }) {
 
 /* ── ResetAdminPasswordPanel ─────────────────────────────────── */
 // Inline sub-component used inside the Overview tab of SchoolDrawer.
+// Fetches admin users for the school via /users/list Edge Function,
+// shows a dropdown, then resets the selected user's password.
 function ResetAdminPasswordPanel({ school, creds }) {
-  const { toast }      = useToast()
-  const [open,         setOpen]    = useState(false)
-  const [newPw,        setNewPw]   = useState('')
-  const [confirmPw,    setConfirm] = useState('')
-  const [showPw,       setShowPw]  = useState(false)
-  const [saving,       setSaving]  = useState(false)
+  const { toast }          = useToast()
+  const [open,             setOpen]         = useState(false)
+  const [adminUsers,       setAdminUsers]   = useState([])
+  const [loadingUsers,     setLoadingUsers] = useState(false)
+  const [selUser,          setSelUser]      = useState('')
+  const [newPw,            setNewPw]        = useState('')
+  const [confirmPw,        setConfirm]      = useState('')
+  const [showPw,           setShowPw]       = useState(false)
+  const [saving,           setSaving]       = useState(false)
 
-  const adminUserId = school.admin_user_id  // from school_registrations, stored on school object
+  // Fetch admin users for this school when the panel opens
+  useEffect(() => {
+    if (!open) return
+    setLoadingUsers(true)
+    callApi('/users/list', creds, { school_id: school.id, role: 'admin', per_page: 50 })
+      .then(res => {
+        const users = res.users ?? []
+        setAdminUsers(users)
+        if (users.length === 1) setSelUser(users[0].user_id)
+      })
+      .catch(() => setAdminUsers([]))
+      .finally(() => setLoadingUsers(false))
+  }, [open, school.id, creds])
 
-  const reset = () => { setNewPw(''); setConfirm(''); setSaving(false); setOpen(false) }
+  const reset = () => {
+    setNewPw(''); setConfirm(''); setSaving(false)
+    setSelUser(''); setAdminUsers([])
+  }
+  const handleClose = () => { reset(); setOpen(false) }
 
   const handleReset = async () => {
-    if (!newPw.trim())           { toast('Enter a new password', 'warning');        return }
-    if (newPw.length < 8)        { toast('Minimum 8 characters required', 'warning'); return }
-    if (newPw !== confirmPw)     { toast('Passwords do not match', 'warning');      return }
-    if (!adminUserId)            { toast('Admin user ID not found for this school', 'error'); return }
+    if (!selUser)            { toast('Select an admin user', 'warning'); return }
+    if (!newPw.trim())       { toast('Enter a new password', 'warning'); return }
+    if (newPw.length < 8)    { toast('Minimum 8 characters required', 'warning'); return }
+    if (newPw !== confirmPw) { toast('Passwords do not match', 'warning'); return }
 
     setSaving(true)
     try {
       await callApi('/users/reset-password', creds, {
-        user_id:      adminUserId,
+        user_id:      selUser,
         new_password: newPw.trim(),
       })
-      toast(`Password reset for ${adminUserId}`, 'success')
-      reset()
+      toast(`Password reset for ${selUser}`, 'success')
+      handleClose()
     } catch (e) {
       toast(e.message, 'error')
     } finally {
       setSaving(false)
     }
   }
-
-  if (!adminUserId) return null
 
   return (
     <div className="rounded-xl ring-1 ring-amber-200 dark:ring-amber-800/40 overflow-hidden">
@@ -120,7 +139,7 @@ function ResetAdminPasswordPanel({ school, creds }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-gray-800 dark:text-gray-200">Reset Admin Password</p>
-          <p className="text-[11px] text-gray-400">For: <span className="font-mono text-indigo-500">{adminUserId}</span></p>
+          <p className="text-[11px] text-gray-400">Reset password for any admin in this school</p>
         </div>
         <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
@@ -131,9 +150,36 @@ function ResetAdminPasswordPanel({ school, creds }) {
           <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 ring-1 ring-amber-200 dark:ring-amber-800/30">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
-              This resets the password for <strong>{adminUserId}</strong>. The admin will need the new password to log in.
-              Use this only when the admin has been locked out.
+              The admin will need the new password to log in. Use only when they've been locked out.
             </p>
+          </div>
+
+          {/* Admin user selector */}
+          <div>
+            <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-1">
+              Select Admin User
+            </label>
+            {loadingUsers ? (
+              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+                <span className="text-xs text-gray-400">Loading users…</span>
+              </div>
+            ) : adminUsers.length === 0 ? (
+              <p className="text-xs text-gray-400 px-1">No admin users found for this school.</p>
+            ) : (
+              <select
+                value={selUser}
+                onChange={e => setSelUser(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 transition-all"
+              >
+                <option value="">— Select user —</option>
+                {adminUsers.map(u => (
+                  <option key={u.user_id} value={u.user_id}>
+                    {u.user_id} — {u.name}{!u.is_active ? ' (inactive)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="space-y-2.5">
@@ -165,7 +211,6 @@ function ResetAdminPasswordPanel({ school, creds }) {
               />
             </div>
 
-            {/* Validation feedback */}
             {newPw && confirmPw && newPw !== confirmPw && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 ring-1 ring-red-200 dark:ring-red-800/40">
                 <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
@@ -181,12 +226,15 @@ function ResetAdminPasswordPanel({ school, creds }) {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button onClick={reset} disabled={saving}
+            <button onClick={handleClose} disabled={saving}
               className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-all disabled:opacity-50">
               Cancel
             </button>
-            <button onClick={handleReset} disabled={saving || !newPw || !confirmPw || newPw !== confirmPw || newPw.length < 8}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm shadow-amber-500/20">
+            <button
+              onClick={handleReset}
+              disabled={saving || !selUser || !newPw || !confirmPw || newPw !== confirmPw || newPw.length < 8}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm shadow-amber-500/20"
+            >
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
               Reset Password
             </button>

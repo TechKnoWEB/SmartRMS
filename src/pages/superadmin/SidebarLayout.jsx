@@ -1,9 +1,9 @@
 // src/pages/superadmin/SidebarLayout.jsx
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   LayoutDashboard, Clock, CheckCircle2, XCircle, FileText, Building2,
   Power, ChevronLeft, Menu, X, Search, Bell, LogOut, Shield,
-  School, ChevronDown, Moon, Sun, BarChart2, Zap, Sliders,
+  School, Moon, Sun, BarChart2, Zap, Sliders,
   Users, RefreshCw,
 } from 'lucide-react'
 
@@ -162,39 +162,12 @@ function SidebarContent({
   activeTab,
   onNavigate,
   counts,
-  dark,
-  onToggleDark,
-  onNotifClick,
-  notifConfigured,
-  onSignOut,
-  onRefresh,
-  loading,
   adminId,
   // Controls
   isMobile,
   onCollapse,
   onCloseMobile,
 }) {
-  const [profileOpen, setProfileOpen] = useState(false)
-  const profileRef = useRef(null)
-
-  // Close profile dropdown on click outside
-  useEffect(() => {
-    if (!profileOpen) return
-    const handler = (e) => {
-      if (profileRef.current && !profileRef.current.contains(e.target)) {
-        setProfileOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [profileOpen])
-
-  // Close profile dropdown when sidebar collapses
-  useEffect(() => {
-    if (!expanded) setProfileOpen(false)
-  }, [expanded])
-
   const getBadge = (key) => (key ? counts[key] ?? null : null)
 
   return (
@@ -312,56 +285,11 @@ function SidebarContent({
         ))}
       </nav>
 
-      {/* ─── Bottom Utilities ─── */}
-      <div className="border-t border-gray-100 px-3 pt-2 pb-1 dark:border-gray-800">
-        {/* Dark mode toggle */}
-        <button
-          onClick={onToggleDark}
-          title={!expanded ? (dark ? 'Light mode' : 'Dark mode') : undefined}
-          className={`flex w-full items-center text-leftrounded-lg px-3 py-2 text-[13px]
-                     font-medium text-gray-600 transition-colors hover:bg-gray-100
-                     hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800
-                     dark:hover:text-gray-200 ${expanded ? 'gap-3' : 'justify-center'}`}
-        >
-          {dark
-            ? <Sun className="h-[18px] w-[18px] text-gray-400" />
-            : <Moon className="h-[18px] w-[18px] text-gray-400" />}
-          {expanded && <span>{dark ? 'Light Mode' : 'Dark Mode'}</span>}
-        </button>
-
-        {/* Notifications */}
-        <button
-          onClick={onNotifClick}
-          title={!expanded ? 'Notifications' : undefined}
-          className={`relative flex w-full items-center rounded-lg px-3 py-2
-                     text-[13px] font-medium text-gray-600 transition-colors
-                     hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400
-                     dark:hover:bg-gray-800 dark:hover:text-gray-200
-                     ${expanded ? 'gap-3' : 'justify-center'}`}
-        >
-          <span className="relative">
-            <Bell className="h-[18px] w-[18px] text-gray-400" />
-            <span
-              className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2
-                         ring-white dark:ring-gray-900
-                         ${notifConfigured ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}
-            />
-          </span>
-          {expanded && <span>Notifications</span>}
-        </button>
-      </div>
 
       {/* ─── Profile Section ─── */}
-      <div
-        ref={profileRef}
-        className="border-t border-gray-100 px-3 py-3 dark:border-gray-800"
-      >
-        <button
-          onClick={() => expanded && setProfileOpen((p) => !p)}
-          title={!expanded ? 'Super Admin' : undefined}
-          aria-expanded={profileOpen}
-          className={`flex w-full items-center rounded-lg px-2 py-2
-                     transition-colors hover:bg-gray-100 dark:hover:bg-gray-800
+      <div className="border-t border-gray-100 px-3 py-3 dark:border-gray-800">
+        <div
+          className={`flex items-center rounded-lg px-2 py-2
                      ${expanded ? 'gap-3' : 'justify-center'}`}
         >
           <div
@@ -371,45 +299,14 @@ function SidebarContent({
             SA
           </div>
           {expanded && (
-            <>
-              <div className="min-w-0 flex-1 text-left">
-                <p className="truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
-                  Super Admin
-                </p>
-                <p className="truncate text-[10px] text-gray-400">{adminId}</p>
-              </div>
-              <ChevronDown
-                className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform
-                           duration-200 ${profileOpen ? 'rotate-180' : ''}`}
-              />
-            </>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
+                Super Admin
+              </p>
+              <p className="truncate text-[10px] text-gray-400">{adminId}</p>
+            </div>
           )}
-        </button>
-
-        {/* Dropdown */}
-        {profileOpen && expanded && (
-          <div className="mt-1.5 space-y-0.5 rounded-lg bg-gray-50 p-1.5 dark:bg-gray-800">
-            <button
-              onClick={onRefresh}
-              disabled={loading}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs
-                         font-medium text-gray-600 transition-colors hover:bg-gray-100
-                         dark:text-gray-400 dark:hover:bg-gray-700 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              {loading ? 'Refreshing…' : 'Refresh Data'}
-            </button>
-            <button
-              onClick={onSignOut}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs
-                         font-medium text-red-600 transition-colors hover:bg-red-50
-                         dark:text-red-400 dark:hover:bg-red-900/20"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign Out
-            </button>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -471,13 +368,6 @@ export default function SidebarLayout({
     activeTab,
     onNavigate,
     counts,
-    dark,
-    onToggleDark,
-    onNotifClick,
-    notifConfigured,
-    onSignOut,
-    onRefresh,
-    loading,
     adminId,
   }
 
@@ -589,25 +479,49 @@ export default function SidebarLayout({
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* Mobile-only: notifications */}
+            {/* Notifications button */}
             <button
               onClick={onNotifClick}
               aria-label="Notifications"
+              title="Notifications"
               className="relative rounded-lg p-2 text-gray-400 transition-colors
                          hover:bg-gray-100 hover:text-gray-600
-                         dark:hover:bg-gray-800 dark:hover:text-gray-300
-                         lg:hidden"
+                         dark:hover:bg-gray-800 dark:hover:text-gray-300"
             >
               <Bell className="h-4 w-4" />
-              {counts.pending > 0 && (
-                <span
-                  className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center
-                             justify-center rounded-full bg-red-500 px-1 text-[9px]
-                             font-bold text-white"
-                >
-                  {counts.pending}
-                </span>
-              )}
+              <span
+                className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full ring-2
+                           ring-white dark:ring-gray-900
+                           ${notifConfigured ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}
+              />
+            </button>
+
+            {/* Dark / Light mode toggle */}
+            <button
+              onClick={onToggleDark}
+              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={dark ? 'Light mode' : 'Dark mode'}
+              className="rounded-lg p-2 text-gray-400 transition-colors
+                         hover:bg-gray-100 hover:text-gray-600
+                         dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            >
+              {dark
+                ? <Sun className="h-4 w-4" />
+                : <Moon className="h-4 w-4" />}
+            </button>
+
+            {/* Sign Out button */}
+            <button
+              onClick={onSignOut}
+              aria-label="Sign out"
+              title="Sign out"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs
+                         font-medium text-red-500 transition-colors
+                         hover:bg-red-50 hover:text-red-600
+                         dark:hover:bg-red-900/20 dark:hover:text-red-400"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
 
             {/* Mobile-only: avatar */}

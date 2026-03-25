@@ -1,20 +1,63 @@
 // src/hooks/useMarks.js
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useOnlineStatus } from './useOnlineStatus'
+import toast from 'react-hot-toast'
 
-// FIX 4.1: Best-effort audit logger — never throws, always surfaces errors.
+// Best-effort audit logger — never throws, always surfaces errors.
 async function logAudit(payload) {
   const { error } = await supabase.from('entry_logs').insert(payload)
   if (error) console.error('[RMS] audit log failed:', error.message, payload)
 }
 
+// Shared upsert so both saveMarks and the queue drain use identical logic.
+async function upsertBatch(batch) {
+  return supabase
+    .from('marks')
+    .upsert(batch, { onConflict: 'student_id,school_id,subject_name,term' })
+}
+
 export function useMarks() {
   const { user, canAccessClass } = useAuth()
+  const isOnline = useOnlineStatus()
+
   const [marks,   setMarks]   = useState([])
   const [loading, setLoading] = useState(false)
 
-  // ── Fetch marks + students ────────────────────────────────
+  // Queue of { batch, auditPayload } objects accumulated while offline
+  const saveQueueRef   = useRef([])
+  const [queuedCount, setQueuedCount] = useState(0)
+
+  // ── Drain queue when connection is restored ──────────────────
+  useEffect(() => {
+    if (!isOnline || saveQueueRef.current.length === 0) return
+
+    const items = [...saveQueueRef.current]
+    saveQueueRef.current = []
+    setQueuedCount(0)
+
+    ;(async () => {
+      let synced = 0
+      for (const { batch, auditPayload } of items) {
+        const { error } = await upsertBatch(batch)
+        if (!error) {
+          synced++
+          logAudit(auditPayload)
+        } else {
+          console.error('[RMS] queue drain failed:', error.message)
+        }
+      }
+      if (synced > 0) {
+        toast.success(
+          `${synced} queued save${synced > 1 ? 's' : ''} synced successfully.`,
+          { id: 'queue-sync' },
+        )
+      }
+    })()
+  }, [isOnline])
+
+  // ── Fetch marks + students ───────────────────────────────────
   const fetchMarks = useCallback(async (className, section, subjectName, term) => {
     if (!canAccessClass(className)) {
       setMarks([]); setLoading(false); return []
@@ -29,7 +72,7 @@ export function useMarks() {
     const { data: existing } = await supabase
       .from('marks').select('*')
       .in('student_id', (students || []).map(s => s.id))
-      .eq('school_id', user.school_id)   // FIX 2.3: scope to this school
+      .eq('school_id', user.school_id)
       .eq('subject_name', subjectName).eq('term', term)
 
     const mMap = {}
@@ -45,12 +88,11 @@ export function useMarks() {
     return grid
   }, [user, canAccessClass])
 
-  // ── Save marks — single batch upsert (FIX 1.5: was N+1 loop) ─
+  // ── Save marks — single batch upsert; queued when offline ───
   const saveMarks = useCallback(async ({ className, section, subjectName, term, marksArr }) => {
     if (!canAccessClass(className))
       return { success: false, message: 'Access denied.' }
 
-    // Build the full batch payload in one pass
     const batch = marksArr.map(row => ({
       student_id:   row.student_id,
       subject_name: subjectName,
@@ -62,17 +104,7 @@ export function useMarks() {
       internal:     row.internal === '' ? null : row.internal,
     }))
 
-    const { error } = await supabase
-      .from('marks')
-      .upsert(batch, { onConflict: 'student_id,school_id,subject_name,term' })
-
-    if (error)
-      return { success: false, message: error.message }
-
-    const changedCells = batch.length
-
-    // FIX 4.1: logAudit surfaces errors instead of silently swallowing them
-    logAudit({
+    const auditPayload = {
       saved_by:    user.user_id,
       school_id:   user.school_id,
       action_type: 'MARKS_SAVE',
@@ -81,27 +113,35 @@ export function useMarks() {
       subject:     subjectName,
       term:        Number(term),
       status:      'MODIFIED',
-      notes:       `${changedCells} cells saved`,
-    })
+      notes:       `${batch.length} cells saved`,
+    }
 
-    return { success: true, changedCells }
-  }, [user, canAccessClass])
+    // ── Offline: queue and return immediately ─────────────────
+    if (!isOnline) {
+      saveQueueRef.current = [...saveQueueRef.current, { batch, auditPayload }]
+      setQueuedCount(saveQueueRef.current.length)
+      return { success: true, queued: true, changedCells: batch.length }
+    }
+
+    // ── Online: normal upsert ─────────────────────────────────
+    const { error } = await upsertBatch(batch)
+    if (error) return { success: false, message: error.message }
+
+    logAudit(auditPayload)
+    return { success: true, changedCells: batch.length }
+  }, [user, canAccessClass, isOnline])
 
   // ── Fetch all terms at once (dynamic 1–4 based on school max_terms) ─
-  // Single student fetch + single marks fetch filtered by school_id.
-  // Returns { t1: [...], t2: [...], t3: [...], t4: [...] } grids (t4 empty if unused).
   const fetchMarksAllTerms = useCallback(async (className, section, subjectName) => {
     const emptyResult = { t1: [], t2: [], t3: [], t4: [] }
     if (!canAccessClass(className)) return emptyResult
 
-    // Fetch school max_terms so we only fetch what's configured
     const { data: schoolData } = await supabase
       .from('schools').select('max_terms')
       .eq('id', user.school_id).single()
     const maxTerms = Math.min(schoolData?.max_terms || 3, 4)
     const termList = Array.from({ length: maxTerms }, (_, i) => i + 1)
 
-    // 1 query: students
     const { data: students } = await supabase
       .from('students').select('id,name,roll')
       .eq('class_name', className).eq('section', section)
@@ -109,7 +149,6 @@ export function useMarks() {
 
     if (!students?.length) return emptyResult
 
-    // 1 query: marks for all active terms
     const { data: allMarks } = await supabase
       .from('marks')
       .select('student_id,term,written,internal')
@@ -118,7 +157,6 @@ export function useMarks() {
       .eq('subject_name', subjectName)
       .in('term', termList)
 
-    // Index by student+term for O(1) lookup
     const mMap = {}
     ;(allMarks || []).forEach(m => {
       if (!mMap[m.student_id]) mMap[m.student_id] = {}
@@ -137,5 +175,5 @@ export function useMarks() {
     return result
   }, [user, canAccessClass])
 
-  return { marks, loading, fetchMarks, fetchMarksAllTerms, saveMarks }
+  return { marks, loading, fetchMarks, fetchMarksAllTerms, saveMarks, isOnline, queuedCount }
 }

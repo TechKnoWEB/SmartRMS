@@ -2,29 +2,24 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { buildStudentResult, rankComparator } from '../../utils/grades'
 import ReportCard from '../../components/results/ReportCard'
+import SchoolSearch from '../../components/ui/SchoolSearch'
+import { HIDE_SCHOOL_LIST } from '../../config'
 import {
   Search, GraduationCap, ArrowLeft, ShieldCheck, Loader2,
   ChevronDown, AlertCircle, BookOpen, Users, Hash, Sparkles,
   Calendar, Award, Heart, Building2,
 } from 'lucide-react'
 
-const RATE_MAX    = 3
-const RATE_WINDOW = 45
+const RATE_MAX    = 10
+const RATE_WINDOW = 10
 
-// Server-side rate check via Edge Function (fail-open so portal stays usable).
-// FIX (Error #6): Supabase Edge Functions require Authorization: Bearer <anon-key>
-// or the gateway returns 401 before the function runs. Fail-open is intentional —
-// a 401 from the gateway must not block students from viewing published results.
+// Server-side rate check via Edge Function (fail-open so portal stays usable)
 async function checkRateServer(identifier, schoolId) {
   try {
-    const base    = import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '') + '/functions/v1'
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+    const base = import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '') + '/functions/v1'
     const res = await fetch(`${base}/rms-api/portal/rate-check`, {
       method: 'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${anonKey}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, school_id: schoolId }),
     })
     if (!res.ok) return { allowed: true }
@@ -39,12 +34,13 @@ async function checkRateServer(identifier, schoolId) {
 // ── Inline school picker shown when /portal is visited without ?school= ──
 function SchoolPicker({ onSelect }) {
   const [schools, setSchools] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!HIDE_SCHOOL_LIST)
   const [query,   setQuery]   = useState('')
   const [open,    setOpen]    = useState(false)
   const ref = useRef(null)
 
   useEffect(() => {
+    if (HIDE_SCHOOL_LIST) return   // skip bulk fetch in secure mode
     supabase
       .from('schools')
       .select('school_name, school_code, tagline, academic_session')
@@ -84,66 +80,80 @@ function SchoolPicker({ onSelect }) {
 
         {/* School selector */}
         <div className="rounded-2xl bg-white p-6 shadow-xl shadow-slate-200/60 ring-1 ring-slate-100">
-          <div className="relative" ref={ref}>
-            <button
-              type="button"
-              onClick={() => setOpen(o => !o)}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-all
-                ${open
-                  ? 'border-indigo-500 ring-4 ring-indigo-500/10 bg-white'
-                  : 'border-slate-200 bg-slate-50/60 hover:border-indigo-300 hover:bg-white'}`}
-            >
-              <Building2 className={`w-5 h-5 flex-shrink-0 transition-colors ${open ? 'text-indigo-500' : 'text-slate-400'}`} />
-              {loading
-                ? <span className="flex-1 text-sm text-slate-400 flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-slate-200 border-t-indigo-400 rounded-full animate-spin" />
-                    Loading schools…
-                  </span>
-                : <span className="flex-1 text-sm text-slate-400">Select your school…</span>
-              }
-              <ChevronDown className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-            </button>
+          {HIDE_SCHOOL_LIST ? (
+            <SchoolSearch
+              onSelect={onSelect}
+              placeholder="Enter your school name or school code to search…"
+            />
+          ) : (
+            <div className="relative" ref={ref}>
+              <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-all
+                  ${open
+                    ? 'border-indigo-500 ring-4 ring-indigo-500/10 bg-white'
+                    : 'border-slate-200 bg-slate-50/60 hover:border-indigo-300 hover:bg-white'}`}
+              >
+                <Building2 className={`w-5 h-5 flex-shrink-0 transition-colors ${open ? 'text-indigo-500' : 'text-slate-400'}`} />
+                {loading
+                  ? <span className="flex-1 text-sm text-slate-400 flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-slate-200 border-t-indigo-400 rounded-full animate-spin" />
+                      Loading schools…
+                    </span>
+                  : <span className="flex-1 text-sm text-slate-400">Select your school…</span>
+                }
+                <ChevronDown className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+              </button>
 
-            {open && (
-              <div className="absolute z-20 top-full mt-2 w-full bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden">
-                {/* Search box */}
-                <div className="p-2 border-b border-slate-100">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input
-                      autoFocus
-                      type="text"
-                      value={query}
-                      onChange={e => setQuery(e.target.value)}
-                      placeholder="Search school name or DISE code…"
-                      className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 rounded-lg border border-transparent focus:outline-none focus:border-indigo-400 text-slate-900 placeholder-slate-400"
-                    />
+              {open && (
+                <div className="absolute z-20 top-full mt-2 w-full bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden">
+                  <div className="p-2 border-b border-slate-100">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        autoFocus
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="Search school name or School code…"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 rounded-lg border border-transparent focus:outline-none focus:border-indigo-400 text-slate-900 placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {schools.filter(s =>
+                      !query ||
+                      s.school_name.toLowerCase().includes(query.toLowerCase()) ||
+                      s.school_code.includes(query)
+                    ).length === 0
+                      ? <p className="text-center text-sm text-slate-400 py-8">No schools found</p>
+                      : schools.filter(s =>
+                          !query ||
+                          s.school_name.toLowerCase().includes(query.toLowerCase()) ||
+                          s.school_code.includes(query)
+                        ).map(s => (
+                          <button
+                            key={s.school_code}
+                            type="button"
+                            onClick={() => onSelect(s.school_code)}
+                            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-indigo-50 transition-colors"
+                          >
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center flex-shrink-0">
+                              <GraduationCap className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">{s.school_name}</p>
+                              <p className="text-[11px] font-mono text-slate-400">{s.school_code}</p>
+                            </div>
+                          </button>
+                        ))
+                    }
                   </div>
                 </div>
-                <div className="max-h-56 overflow-y-auto">
-                  {filtered.length === 0
-                    ? <p className="text-center text-sm text-slate-400 py-8">No schools found</p>
-                    : filtered.map(s => (
-                        <button
-                          key={s.school_code}
-                          type="button"
-                          onClick={() => onSelect(s.school_code)}
-                          className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-indigo-50 transition-colors"
-                        >
-                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center flex-shrink-0">
-                            <GraduationCap className="w-4 h-4 text-indigo-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 truncate">{s.school_name}</p>
-                            <p className="text-[11px] font-mono text-slate-400">{s.school_code}</p>
-                          </div>
-                        </button>
-                      ))
-                  }
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           <p className="mt-4 text-center text-[11px] text-slate-400">
             Or use the direct link your school provided
@@ -234,10 +244,7 @@ export default function StudentPortal() {
       })
   }, [diseCode])
 
-  // Fetch sections when class changes.
-  // FIX (Error #3): normalise section values to uppercase so they match
-  // the .eq('section', section.toUpperCase()) used in all subsequent queries.
-  // Mixed-case storage (e.g. 'a' vs 'A') was causing rank cohort mismatches.
+  // Fetch sections when class changes
   useEffect(() => {
     if (!form.class_name || !schoolId) { setSections([]); return }
     supabase
@@ -246,8 +253,7 @@ export default function StudentPortal() {
       .eq('class_name', form.class_name)
       .eq('school_id', schoolId)
       .then(({ data }) => {
-        const normalised = (data || []).map(r => (r.section || '').toUpperCase()).filter(Boolean)
-        setSections([...new Set(normalised)].sort())
+        setSections([...new Set(data?.map(r => r.section) || [])].sort())
       })
   }, [form.class_name, schoolId])
 
@@ -315,11 +321,9 @@ export default function StudentPortal() {
           buildStudentResult(s, cfgRows, marksByStudent[s.id] || [])
         )
         all.sort(rankComparator)
-        // FIX (Error #3): use findIndex with id comparison — unambiguous even
-        // when section normalisation changes the cohort vs the cached `stu` ref.
-        const meIdx = all.findIndex(r => r.student.id === stu.id)
-        if (meIdx !== -1) {
-          built.rank           = meIdx + 1
+        const me = all.find(r => r.student.id === stu.id)
+        if (me) {
+          built.rank           = all.indexOf(me) + 1
           built.total_students = all.length
         }
       }
@@ -592,7 +596,7 @@ export default function StudentPortal() {
       <footer className="z-50 w-full border-t border-slate-100 bg-white px-4">
         <div className="mx-auto flex h-10 max-w-7xl items-center justify-between">
           <p className="flex items-center gap-1 text-[10px] text-slate-400">
-            Made with <Heart className="h-2.5 w-2.5 text-rose-400" /> for students | Developed by R.
+            Made with <Heart className="h-2.5 w-2.5 text-rose-400" /> for students | <strong>Developed by TeamR.</strong>
           </p>
           <p className="text-[10px] text-slate-400">© {new Date().getFullYear()} All rights reserved</p>
         </div>

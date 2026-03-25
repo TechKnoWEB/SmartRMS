@@ -74,7 +74,9 @@ function EditCell({ value, onChange, type = 'text' }) {
       type={type}
       value={value ?? ''}
       onChange={e => onChange(e.target.value)}
-      className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/50 focus:border-indigo-400 rounded-lg px-2 py-1.5 transition-all hover:border-gray-300 dark:hover:border-gray-600"
+      className={`w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/50 focus:border-indigo-400 rounded-lg px-2.5 py-1.5 transition-all hover:border-gray-300 dark:hover:border-gray-600${
+        type === 'number' ? ' min-w-[4.5rem]' : ''
+      }`}
     />
   )
 }
@@ -383,6 +385,7 @@ export default function Settings() {
   const [classModal,   setClassModal]   = useState({ open: false, mode: 'add', data: { ...EMPTY_CLASS } })
   const [classSaving,  setClassSaving]  = useState(false)
   const [deleteClass,  setDeleteClass]  = useState(null)
+  const [deleteSubject, setDeleteSubject] = useState(null) // { id, subject_name }
 
   useEffect(() => {
     supabase.from('schools').select('*').eq('id', user.school_id).single()
@@ -456,11 +459,14 @@ export default function Settings() {
     loadConfig(selClass)
   }
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this subject config?')) return
-    const { error: delErr } = await supabase.from('config').delete().eq('id', id)
-    if (delErr) toast.error(delErr.message)
-    else { toast.success('Deleted.'); loadConfig(selClass) }
+  const handleDelete = (row) => setDeleteSubject(row)
+
+  const confirmDeleteSubject = async () => {
+    const { error: delErr } = await supabase.from('config').delete().eq('id', deleteSubject.id)
+    if (delErr) { toast.error(delErr.message); return }
+    toast.success('Deleted.')
+    setDeleteSubject(null)
+    loadConfig(selClass)
   }
 
   const handleBulkSave = async () => {
@@ -534,7 +540,7 @@ export default function Settings() {
     <div className="space-y-6 max-w-6xl mx-auto">
 
       {/* ═══ HERO HEADER ═══════════════════════════════════════ */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 dark:from-indigo-800 dark:via-indigo-900 dark:to-purple-900 px-6 sm:px-8 py-7">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 px-6 sm:px-8 py-7">
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-2xl" />
         <div className="absolute -bottom-12 -left-12 w-56 h-56 bg-purple-400/10 rounded-full blur-3xl" />
         <div className="absolute top-5 right-20 w-2 h-2 bg-white/20 rounded-full" />
@@ -793,7 +799,7 @@ export default function Settings() {
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800 bg-white dark:bg-gray-900">
                   {(bulkEditMode ? bulkRows : config).map((c, idx) => (
                     <tr key={c.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors duration-150">
-                      <td className="px-3 py-2.5 w-16">
+                      <td className="px-3 py-2.5 w-24">
                         {bulkEditMode
                           ? <EditCell value={c.display_order} type="number" onChange={v => updateBulkRow(idx, 'display_order', v)} />
                           : <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-400 tabular-nums">{c.display_order}</span>
@@ -806,14 +812,14 @@ export default function Settings() {
                         }
                       </td>
                       {['max_t1', 'max_t1_int', 'max_t2', 'max_t2_int', 'max_t3', 'max_t3_int'].map(field => (
-                        <td key={field} className="px-3 py-2.5 w-16">
+                        <td key={field} className="px-3 py-2.5 w-24">
                           {bulkEditMode
                             ? <EditCell value={c[field]} type="number" onChange={v => updateBulkRow(idx, field, v)} />
                             : <span className="text-xs tabular-nums text-gray-600 dark:text-gray-400">{c[field] || '0'}</span>
                           }
                         </td>
                       ))}
-                      <td className="px-3 py-2.5 w-16">
+                      <td className="px-3 py-2.5 w-24">
                         {bulkEditMode
                           ? <EditCell value={c.divisor} type="number" onChange={v => updateBulkRow(idx, 'divisor', v)} />
                           : <span className="text-xs font-mono tabular-nums text-gray-500">÷{c.divisor}</span>
@@ -851,7 +857,7 @@ export default function Settings() {
                               <Edit2 className="w-3 h-3" />
                             </button>
                             <button
-                              onClick={() => handleDelete(c.id)}
+                              onClick={() => handleDelete(c)}
                               className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-all duration-150 hover:scale-110 active:scale-95"
                               title="Delete"
                             >
@@ -935,6 +941,15 @@ export default function Settings() {
           <Button className="!rounded-xl" onClick={handleSaveClass} loading={classSaving}>Save</Button>
         </div>
       </Modal>
+
+      {/* Delete subject confirmation */}
+      <ConfirmDelete
+        open={!!deleteSubject}
+        onClose={() => setDeleteSubject(null)}
+        onConfirm={confirmDeleteSubject}
+        title="Delete Subject"
+        itemName={deleteSubject?.subject_name}
+      />
 
       {/* Delete class confirmation */}
       <ConfirmDelete

@@ -16,6 +16,7 @@ import Select from '../../components/ui/Select'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import ReportCard from '../../components/results/ReportCard'
+import StudentProgressView from '../../components/results/StudentProgressView'
 import { exportResultsToExcel } from '../../utils/exportExcel'
 import { exportBulkPDF, downloadReportCardPDF, printReportCard } from '../../utils/exportPDF'
 import {
@@ -43,19 +44,19 @@ const RankBadge = ({ rank }) => {
   if (rank === 1)
     return (
       <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 text-white text-xs font-black shadow-lg shadow-amber-200/50 dark:shadow-amber-900/30 ring-2 ring-amber-200 dark:ring-amber-700">
-        🥇
+        #{rank}
       </span>
     )
   if (rank === 2)
     return (
       <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-400 text-white text-xs font-black shadow-lg shadow-gray-200/50 dark:shadow-gray-800/30 ring-2 ring-gray-300 dark:ring-gray-600">
-        🥈
+        #{rank}
       </span>
     )
   if (rank === 3)
     return (
       <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-orange-300 to-orange-500 text-white text-xs font-black shadow-lg shadow-orange-200/50 dark:shadow-orange-900/30 ring-2 ring-orange-300 dark:ring-orange-700">
-        🥉
+        #{rank}
       </span>
     )
   return (
@@ -126,37 +127,20 @@ export default function Results() {
   const [school, setSchool] = useState(null)
   const [selected, setSelected] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [modalTab, setModalTab]   = useState('report')  // 'report' | 'progress'
+  const [modalMode, setModalMode] = useState('full')    // 'full' (tabs) | 'progress' (progress only)
   const [bulkProg, setBulkProg] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  // FIX (Error #8): custom grading bands and pass mark fetched per school
-  const [gradeBands, setGradeBands] = useState([])
-  const [passMark,   setPassMark]   = useState(33)
 
   const { sectionOpts } = useSections(filter.class_name)
 
-  // FIX (Error #8): fetch school row AND grading config together
   useEffect(() => {
     supabase
       .from('schools')
       .select('*')
       .eq('id', user.school_id)
       .single()
-      .then(({ data }) => {
-        if (data) {
-          setSchool(data)
-          setPassMark(data.pass_mark || 33)
-        }
-      })
-
-    supabase
-      .from('grading_config')
-      .select('grade_label, min_pct, max_pct, color_class, display_order')
-      .eq('school_id', user.school_id)
-      .order('display_order')
-      .then(({ data }) => {
-        if (data && data.length > 0) setGradeBands(data)
-        // else gradeBands stays [], grades.js falls back to DEFAULT_GRADE_BANDS
-      })
+      .then(({ data }) => setSchool(data))
   }, [user])
 
   const loadResults = async () => {
@@ -185,16 +169,7 @@ export default function Results() {
     }
 
     const studentIds = students.map((s) => s.id)
-
-    // FIX (Error #8): fetch marks AND attendance in parallel
-    const [{ data: allMarks }, { data: attRows }] = await Promise.all([
-      supabase.from('marks').select('*').in('student_id', studentIds),
-      supabase
-        .from('attendance')
-        .select('student_id, attendance_pct')
-        .in('student_id', studentIds)
-        .eq('school_id', user.school_id),
-    ])
+    const { data: allMarks } = await supabase.from('marks').select('*').in('student_id', studentIds)
 
     const marksByStudent = {}
     ;(allMarks || []).forEach((m) => {
@@ -202,26 +177,9 @@ export default function Results() {
       marksByStudent[m.student_id].push(m)
     })
 
-    // Build an attendance lookup: student_id → pct
-    const attByStudent = {}
-    ;(attRows || []).forEach((a) => {
-      attByStudent[a.student_id] = a.attendance_pct
-    })
-
-    // FIX (Error #8): pass gradeBands + passMark so custom grading is respected,
-    // and merge attendance_pct into each student object so it flows to ReportCard.
-    const built = students.map((stu) => {
-      const stuWithAtt = {
-        ...stu,
-        attendance_pct: attByStudent[stu.id] ?? null,
-      }
-      return buildStudentResult(
-        stuWithAtt,
-        cfgRows,
-        marksByStudent[stu.id] || [],
-        { gradeBands, passMark },
-      )
-    })
+    const built = students.map((stu) =>
+      buildStudentResult(stu, cfgRows, marksByStudent[stu.id] || []),
+    )
     built.sort(rankComparator)
     built.forEach((r, i) => {
       r.rank = i + 1
@@ -298,25 +256,13 @@ export default function Results() {
     const key  = `t${term}_lock`
     const next = !locks[key]
 
-    // FIX: Route through toggle-term-lock Edge Function (server-side role check).
-    // Direct anon-key writes to term_locks are blocked by RLS — this is the
-    // only authorised path. The Edge Function re-verifies role from the DB.
-    //
-    // BUG FIX (Error #1 — Term Lock 401): Supabase Edge Functions require an
-    // Authorization: Bearer <anon-key> header. Without it the Supabase
-    // gateway itself returns 401 before the function code runs, surfacing as
-    // "Unauthorized" even for a logged-in admin.
-    const efUrl   = import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '')
+    const efUrl = import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '')
       + '/functions/v1/toggle-term-lock'
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
     try {
       const res = await fetch(efUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id:    user.user_id,
           school_id:  user.school_id,
@@ -370,7 +316,7 @@ export default function Results() {
   return (
     <div className="space-y-6">
       {/* ─── HERO HEADER ────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 dark:from-indigo-800 dark:via-indigo-900 dark:to-purple-900 px-6 sm:px-8 py-7">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 px-6 sm:px-8 py-7">
         {/* decorative circles */}
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-2xl" />
         <div className="absolute -bottom-12 -left-12 w-56 h-56 bg-purple-400/10 rounded-full blur-3xl" />
@@ -513,32 +459,52 @@ export default function Results() {
                           ? `Click to unlock Term ${t}`
                           : `Click to lock Term ${t}`
                       }
-                      className={`group/lock flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border font-semibold transition-all duration-200 hover:scale-105 active:scale-95 ${
-                        isLocked
-                          ? 'bg-red-50 border-red-300 text-red-600 hover:bg-red-100 hover:shadow-sm hover:shadow-red-100 dark:bg-red-900/20 dark:border-red-700 dark:text-red-400'
-                          : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100 hover:shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700'
-                      }`}
+                      className={`
+                        group/lock relative flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl border-2 font-bold
+                        transition-all duration-200 cursor-pointer select-none
+                        hover:scale-[1.06] active:scale-95
+                        shadow-md hover:shadow-lg
+                        ${isLocked
+                          ? 'bg-gradient-to-b from-red-50 to-red-100 border-red-300 text-red-700 hover:from-red-100 hover:to-red-150 hover:border-red-400 shadow-red-200/60 hover:shadow-red-300/60 dark:from-red-900/40 dark:to-red-900/60 dark:border-red-600 dark:text-red-300 dark:shadow-red-900/40 dark:hover:border-red-500'
+                          : 'bg-gradient-to-b from-white to-gray-50 border-gray-250 text-gray-600 hover:from-gray-50 hover:to-gray-100 hover:border-gray-350 shadow-gray-200/60 hover:shadow-gray-300/60 dark:from-gray-800 dark:to-gray-850 dark:border-gray-600 dark:text-gray-300 dark:shadow-gray-900/40 dark:hover:border-gray-500'
+                        }
+                      `}
                     >
+                      {/* inner highlight line at top */}
+                      <span className={`absolute inset-x-0 top-0 h-[2px] rounded-t-xl ${
+                        isLocked
+                          ? 'bg-gradient-to-r from-transparent via-red-400/50 to-transparent'
+                          : 'bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-gray-600/50'
+                      }`} />
                       {isLocked ? (
-                        <Lock className="w-3.5 h-3.5 group-hover/lock:animate-pulse" />
+                        <Lock className="w-3.5 h-3.5 group-hover/lock:animate-[wiggle_0.3s_ease-in-out] drop-shadow-sm" />
                       ) : (
-                        <Unlock className="w-3.5 h-3.5" />
+                        <Unlock className="w-3.5 h-3.5 drop-shadow-sm" />
                       )}
                       T{t}
                     </button>
                   )
                 }
 
+                // Non-admin: read-only badge style (not a button)
                 return (
                   <span
                     key={t}
                     title={isLocked ? `Term ${t} is locked` : `Term ${t} is open`}
-                    className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border font-semibold cursor-default select-none ${
-                      isLocked
-                        ? 'bg-red-50 border-red-200 text-red-400 dark:bg-red-900/10 dark:border-red-900 dark:text-red-500'
-                        : 'bg-gray-50 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700'
-                    }`}
+                    className={`
+                      relative flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl border-2 font-bold
+                      cursor-default select-none shadow-sm
+                      ${isLocked
+                        ? 'bg-gradient-to-b from-red-50 to-red-100/80 border-red-200 text-red-400 dark:from-red-900/20 dark:to-red-900/30 dark:border-red-800 dark:text-red-500 shadow-red-100/40 dark:shadow-red-900/20'
+                        : 'bg-gradient-to-b from-gray-50 to-gray-100/80 border-gray-200 text-gray-400 dark:from-gray-800 dark:to-gray-850 dark:border-gray-700 shadow-gray-100/40 dark:shadow-gray-900/20'
+                      }
+                    `}
                   >
+                    <span className={`absolute inset-x-0 top-0 h-[2px] rounded-t-xl ${
+                      isLocked
+                        ? 'bg-gradient-to-r from-transparent via-red-300/30 to-transparent'
+                        : 'bg-gradient-to-r from-transparent via-gray-200/50 to-transparent dark:via-gray-600/30'
+                    }`} />
                     {isLocked ? (
                       <Lock className="w-3.5 h-3.5" />
                     ) : (
@@ -725,16 +691,20 @@ export default function Results() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-1">
+                        {/* Eye — Report Card (full modal, larger) */}
                         <button
                           className="p-2 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-150 hover:scale-110 active:scale-95"
-                          title="View"
+                          title="View Report Card"
                           onClick={() => {
                             setSelected({ result: r, school })
+                            setModalTab('report')
+                            setModalMode('full')
                             setModalOpen(true)
                           }}
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+                        {/* Print */}
                         <button
                           className="p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-900/20 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-all duration-150 hover:scale-110 active:scale-95"
                           title="Print"
@@ -742,12 +712,18 @@ export default function Results() {
                         >
                           <Printer className="w-4 h-4" />
                         </button>
+                        {/* Progress — progress-only modal */}
                         <button
                           className="p-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all duration-150 hover:scale-110 active:scale-95"
-                          title="Download PDF"
-                          onClick={() => downloadReportCardPDF(r, school)}
+                          title="Student Progress"
+                          onClick={() => {
+                            setSelected({ result: r, school })
+                            setModalTab('progress')
+                            setModalMode('progress')
+                            setModalOpen(true)
+                          }}
                         >
-                          <Download className="w-4 h-4" />
+                          <TrendingUp className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -807,19 +783,52 @@ export default function Results() {
         </Card>
       )}
 
-      {/* ─── REPORT CARD MODAL ──────────────────────────── */}
+      {/* ─── STUDENT DETAIL MODAL ───────────────────────── */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Report Card"
-        size="xl"
+        title={selected?.result?.student?.name || 'Student Detail'}
+        subtitle={selected ? `${selected.result.student.class_name} — ${selected.result.student.section} · Roll ${selected.result.student.roll}` : ''}
+        size={modalMode === 'full' ? '3xl' : '2xl'}
       >
         {selected && (
-          <ReportCard
-            result={selected.result}
-            school={selected.school}
-            showActions
-          />
+          <>
+            {/* Tab bar — only shown in full mode */}
+            {modalMode === 'full' && (
+              <div className="flex gap-1 p-1 mb-6 rounded-xl bg-gray-100 dark:bg-gray-800 w-fit">
+                {[
+                  { key: 'report',   label: 'Report Card', icon: FileText },
+                  { key: 'progress', label: 'Progress',    icon: TrendingUp },
+                ].map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setModalTab(key)}
+                    className={[
+                      'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-150',
+                      modalTab === key
+                        ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
+                    ].join(' ')}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Tab content */}
+            {modalMode === 'full' && modalTab === 'report' && (
+              <ReportCard
+                result={selected.result}
+                school={selected.school}
+                showActions
+              />
+            )}
+            {(modalMode === 'progress' || modalTab === 'progress') && (
+              <StudentProgressView result={selected.result} />
+            )}
+          </>
         )}
       </Modal>
     </div>

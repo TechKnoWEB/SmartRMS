@@ -343,19 +343,249 @@ function BulkUploadModal({ open, onClose, onSuccess }) {
   )
 }
 
+// --- Student Add/Edit Form Modal ---
+// Extracted so it owns a useSections call scoped to the modal's
+// selected class, independent of the page-level filter bar.
+function StudentFormModal({ open, onClose, mode, data, onChange, onSave, saving }) {
+  const { classOpts } = useClasses()
+  const { sectionOpts, sectionsLoading } = useSections(data.class_name)
+
+  return (
+    <Modal open={open} onClose={onClose}
+      title={mode === 'add' ? 'Add Student' : 'Edit Student'} size="lg">
+
+      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+        <div className={`
+          w-12 h-12 rounded-xl flex items-center justify-center shadow-sm
+          ${mode === 'add'
+            ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-200 dark:shadow-indigo-900/40'
+            : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-200 dark:shadow-amber-900/40'
+          }
+        `}>
+          {mode === 'add'
+            ? <UserPlus className="w-6 h-6 text-white" />
+            : <Pencil className="w-5 h-5 text-white" />
+          }
+        </div>
+        <div>
+          <h3 className="text-base font-bold text-gray-800 dark:text-white">
+            {mode === 'add' ? 'New Student Registration' : 'Update Student Details'}
+          </h3>
+          <p className="text-xs text-gray-400">
+            {mode === 'add' ? 'Fill in the details to register a new student' : 'Modify the student information below'}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+
+        {/* Name */}
+        <Input label="Name" value={data.name || ''}
+          onChange={e => onChange('name', e.target.value)} />
+
+        {/* Roll No */}
+        <Input label="Roll No" value={data.roll || ''}
+          onChange={e => onChange('roll', e.target.value)} />
+
+        {/* Class -- dropdown, school-scoped via useClasses() */}
+        <Select
+          label="Class"
+          options={classOpts('-- Select Class --')}
+          value={data.class_name || ''}
+          onChange={e => {
+            onChange('class_name', e.target.value)
+            onChange('section', '')   // reset section on class change
+          }}
+        />
+
+        {/* Section -- cascades from selected class */}
+        <Select
+          label="Section"
+          options={
+            !data.class_name
+              ? [{ value: '', label: '-- Select Class First --' }]
+              : sectionsLoading
+                ? [{ value: '', label: 'Loading...' }]
+                : sectionOpts('-- Select Section --')
+          }
+          value={data.section || ''}
+          onChange={e => onChange('section', e.target.value)}
+          disabled={!data.class_name || sectionsLoading}
+        />
+
+        {/* Remaining plain-text fields */}
+        <Input label="Father Name" value={data.father_name || ''}
+          onChange={e => onChange('father_name', e.target.value)} />
+        <Input label="Mother Name" value={data.mother_name || ''}
+          onChange={e => onChange('mother_name', e.target.value)} />
+        <Input label="Date of Birth" type="date" value={data.dob || ''}
+          onChange={e => onChange('dob', e.target.value)} />
+        <Input label="BSP ID" value={data.admission_no || ''}
+          onChange={e => onChange('admission_no', e.target.value)} />
+
+      </div>
+
+      <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button onClick={onSave} loading={saving}>
+          {mode === 'add'
+            ? <><UserPlus className="w-4 h-4" /> Add Student</>
+            : <><CheckCircle2 className="w-4 h-4" /> Save Changes</>}
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Bulk Delete Modal ────────────────────────────────────────
+function BulkDeleteModal({ open, onClose, students, className, section, bulkDelete, getBulkMarksCount, onSuccess }) {
+  const [selected,    setSelected]    = useState([])
+  const [confirmText, setConfirmText] = useState('')
+  const [deleting,    setDeleting]    = useState(false)
+  const [marksCount,  setMarksCount]  = useState(null)
+
+  // Reset selection when modal opens
+  useEffect(() => {
+    if (open) { setSelected(students.map(s => s.id)); setConfirmText(''); setDeleting(false) }
+    else setSelected([])
+  }, [open])
+
+  // Sync marks count whenever selection changes
+  useEffect(() => {
+    if (!open) return
+    if (!selected.length) { setMarksCount(0); return }
+    let alive = true
+    setMarksCount(null)
+    getBulkMarksCount(selected).then(c => { if (alive) setMarksCount(c) })
+    return () => { alive = false }
+  }, [open, selected])
+
+  const allSelected = students.length > 0 && selected.length === students.length
+  const toggleAll   = () => setSelected(allSelected ? [] : students.map(s => s.id))
+  const toggleOne   = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+
+  const handleConfirm = async () => {
+    setDeleting(true)
+    const res = await bulkDelete(selected, className)
+    setDeleting(false)
+    if (res.success) {
+      toast.success(`${res.count} student(s) and their records permanently deleted.`)
+      onSuccess()
+      onClose()
+    } else {
+      toast.error(res.message)
+    }
+  }
+
+  const canConfirm = selected.length > 0 && confirmText === 'DELETE' && !deleting
+
+  return (
+    <Modal open={open} onClose={onClose} title="Bulk Delete Students" size="lg">
+      {/* Danger banner */}
+      <div className="flex gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 mb-5">
+        <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-bold text-red-700 dark:text-red-400">This action is permanent and cannot be undone.</p>
+          <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
+            All selected students and their marks records will be permanently erased from the system.
+          </p>
+        </div>
+      </div>
+
+      {/* Context pill */}
+      <div className="flex items-center gap-2 mb-4 text-sm text-gray-600 dark:text-gray-400">
+        <GraduationCap className="w-4 h-4" />
+        <span className="font-medium">{className}</span>
+        {section && <><ChevronRight className="w-3 h-3" /><span>Section {section}</span></>}
+        <span className="ml-auto text-xs bg-gray-100 dark:bg-gray-700 rounded-full px-2.5 py-0.5 font-semibold">
+          {students.length} student{students.length !== 1 ? 's' : ''} loaded
+        </span>
+      </div>
+
+      {/* Student checklist */}
+      <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden mb-4">
+        <label className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleAll}
+            className="w-4 h-4 rounded accent-red-600 cursor-pointer"
+          />
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            {allSelected ? 'Deselect All' : 'Select All'}
+          </span>
+          <span className="ml-auto text-xs font-semibold text-gray-400">{selected.length} selected</span>
+        </label>
+        <div className="max-h-52 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/50">
+          {students.map(s => (
+            <label key={s.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/60 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={selected.includes(s.id)}
+                onChange={() => toggleOne(s.id)}
+                className="w-4 h-4 rounded accent-red-600 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{s.name}</span>
+              <span className="text-xs text-gray-400 ml-1">Roll {s.roll}</span>
+              {s.admission_no && <span className="text-xs text-gray-400 ml-auto">{s.admission_no}</span>}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Impact summary */}
+      {selected.length > 0 && (
+        <div className="flex gap-3 mb-5">
+          <div className="flex-1 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 p-3 text-center">
+            <p className="text-2xl font-black text-red-600 dark:text-red-400">{selected.length}</p>
+            <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">Student{selected.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="flex-1 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 p-3 text-center">
+            <p className="text-2xl font-black text-orange-600 dark:text-orange-400">
+              {marksCount === null ? '…' : marksCount}
+            </p>
+            <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">Marks Records</p>
+          </div>
+        </div>
+      )}
+
+      {/* Typed confirmation */}
+      <div className="mb-5">
+        <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5">
+          Type <span className="font-mono font-black text-red-600 dark:text-red-400 tracking-widest">DELETE</span> to confirm
+        </label>
+        <input
+          value={confirmText}
+          onChange={e => setConfirmText(e.target.value)}
+          placeholder="DELETE"
+          className="w-full font-mono rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500"
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex justify-end gap-3">
+        <Button variant="secondary" onClick={onClose} disabled={deleting}>Cancel</Button>
+        <Button variant="danger" onClick={handleConfirm} disabled={!canConfirm}>
+          <Trash2 className="w-4 h-4" />
+          {deleting ? 'Deleting…' : `Delete ${selected.length} Student${selected.length !== 1 ? 's' : ''}`}
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 // ─── Main Students Page ───────────────────────────────────────
 export default function Students() {
   const { can } = useAuth()
-  const { students, loading, fetchStudents, addStudent, updateStudent, deleteStudent, bulkDelete, getMarksCount } = useStudents()
+  const { students, loading, fetchStudents, addStudent, updateStudent, deleteStudent, bulkDelete, getMarksCount, getBulkMarksCount } = useStudents()
   const { classOpts, refreshClasses } = useClasses()
 
-  const [filter,    setFilter]    = useState({ class_name: '', section: '' })
-  const [modal,     setModal]     = useState({ open: false, mode: 'add', data: EMPTY })
-  const [delModal,  setDelModal]  = useState({ open: false, id: null, name: '', class_name: '' })
-  const [bulkOpen,  setBulkOpen]  = useState(false)
-  const [saving,    setSaving]    = useState(false)
-  const [selected,  setSelected]  = useState(new Set())   // bulk selection
-  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [filter,   setFilter]   = useState({ class_name: '', section: '' })
+  const [modal,    setModal]    = useState({ open: false, mode: 'add', data: EMPTY })
+  const [delModal, setDelModal] = useState({ open: false, id: null, name: '', class_name: '' })
+  const [bulkOpen,    setBulkOpen]    = useState(false)
+  const [bulkDelOpen, setBulkDelOpen] = useState(false)
+  const [saving,   setSaving]   = useState(false)
 
   const { sectionOpts, refreshSections } = useSections(filter.class_name)
 
@@ -378,6 +608,10 @@ export default function Students() {
     } else toast.error(res.message)
   }
 
+  // Single-field updater used by StudentFormModal
+  const handleFieldChange = (key, value) =>
+    setModal(m => ({ ...m, data: { ...m.data, [key]: value } }))
+
   const handleDelete = async () => {
     const res = await deleteStudent(delModal.id, delModal.class_name)
     if (res.success) {
@@ -387,48 +621,9 @@ export default function Students() {
     } else toast.error(res.message)
   }
 
-  const handleBulkDelete = async () => {
-    if (selected.size === 0) return
-    if (!window.confirm(`Delete ${selected.size} selected student(s)? This will also remove their marks.`)) return
-    setBulkDeleting(true)
-    const res = await bulkDelete([...selected], filter.class_name)
-    setBulkDeleting(false)
-    if (res.success) {
-      toast.success(`${res.count} student(s) deleted.`)
-      setSelected(new Set())
-      fetchStudents(filter.class_name, filter.section || undefined)
-    } else toast.error(res.message)
-  }
-
-  const toggleSelect = (id) => setSelected(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
-
-  const toggleAll = () => {
-    setSelected(prev => prev.size === students.length
-      ? new Set()
-      : new Set(students.map(s => s.id)))
-  }
-
   const sectionOptsAll = [{ value: '', label: '-- All --' }, ...sectionOpts('-- All --').slice(1)]
 
   const columns = [
-    { key: '_sel', label: (
-        <input type="checkbox"
-          checked={students.length > 0 && selected.size === students.length}
-          onChange={toggleAll}
-          className="rounded border-gray-300 text-indigo-600 w-3.5 h-3.5" />
-      ),
-      render: (_, row) => (
-        <input type="checkbox"
-          checked={selected.has(row.id)}
-          onChange={() => toggleSelect(row.id)}
-          onClick={e => e.stopPropagation()}
-          className="rounded border-gray-300 text-indigo-600 w-3.5 h-3.5" />
-      ),
-    },
     { key: 'roll',         label: 'Roll' },
     { key: 'name',         label: 'Name' },
     { key: 'class_name',   label: 'Class' },
@@ -455,7 +650,7 @@ export default function Students() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-6 md:p-8 shadow-xl shadow-indigo-200/50 dark:shadow-indigo-900/30">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 p-6 md:p-8 shadow-xl shadow-primary-600/15 dark:shadow-primary-900/30">
         {/* Decorative elements */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
         <div className="absolute bottom-0 left-0 w-40 h-40 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
@@ -498,6 +693,14 @@ export default function Students() {
             >
               <Download className="w-4 h-4" /> Export
             </Button>
+            {can('write') && filter.class_name && students.length > 0 && (
+              <Button
+                onClick={() => setBulkDelOpen(true)}
+                className="!bg-red-500/80 !text-white !border-red-400/50 hover:!bg-red-600/90 backdrop-blur-sm"
+              >
+                <Trash2 className="w-4 h-4" /> Bulk Delete
+              </Button>
+            )}
           </div>
         </div>
 
@@ -568,71 +771,21 @@ export default function Students() {
 
         {/* Table only shown when class is selected or loading */}
         {(filter.class_name || loading) && (
-          <>
-            {/* Bulk action bar */}
-            {selected.size > 0 && can('write') && (
-              <div className="flex items-center gap-3 mb-3 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800/50">
-                <span className="text-sm font-bold text-red-700 dark:text-red-400 flex-1">
-                  {selected.size} student{selected.size > 1 ? 's' : ''} selected
-                </span>
-                <Button size="sm" variant="danger" loading={bulkDeleting} onClick={handleBulkDelete}>
-                  <Trash2 className="w-3.5 h-3.5" /> Delete Selected
-                </Button>
-                <button onClick={() => setSelected(new Set())}
-                  className="text-xs text-red-500 hover:text-red-700 font-semibold transition-colors">
-                  Clear
-                </button>
-              </div>
-            )}
-            <Table columns={columns} data={students} loading={loading}
-              emptyText={filter.class_name ? 'No students found.' : 'Select a class to view students.'} />
-          </>
+          <Table columns={columns} data={students} loading={loading}
+            emptyText={filter.class_name ? 'No students found.' : 'Select a class to view students.'} />
         )}
       </Card>
 
-      {/* Add / Edit Modal */}
-      <Modal open={modal.open} onClose={() => setModal(m => ({ ...m, open: false }))}
-        title={modal.mode === 'add' ? 'Add Student' : 'Edit Student'} size="lg">
-
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-          <div className={`
-            w-12 h-12 rounded-xl flex items-center justify-center shadow-sm
-            ${modal.mode === 'add'
-              ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-200 dark:shadow-indigo-900/40'
-              : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-200 dark:shadow-amber-900/40'
-            }
-          `}>
-            {modal.mode === 'add'
-              ? <UserPlus className="w-6 h-6 text-white" />
-              : <Pencil className="w-5 h-5 text-white" />
-            }
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-gray-800 dark:text-white">
-              {modal.mode === 'add' ? 'New Student Registration' : 'Update Student Details'}
-            </h3>
-            <p className="text-xs text-gray-400">
-              {modal.mode === 'add' ? 'Fill in the details to register a new student' : 'Modify the student information below'}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          {[['name','Name'],['roll','Roll No'],['class_name','Class'],['section','Section'],
-            ['father_name','Father Name'],['mother_name','Mother Name'],['dob','Date of Birth'],['admission_no','BSP ID']
-          ].map(([k, lbl]) => (
-            <Input key={k} label={lbl} type={k === 'dob' ? 'date' : 'text'}
-              value={modal.data[k] || ''}
-              onChange={e => setModal(m => ({ ...m, data: { ...m.data, [k]: e.target.value } }))} />
-          ))}
-        </div>
-        <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
-          <Button variant="secondary" onClick={() => setModal(m => ({ ...m, open: false }))}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>
-            {modal.mode === 'add' ? <><UserPlus className="w-4 h-4" /> Add Student</> : <><CheckCircle2 className="w-4 h-4" /> Save Changes</>}
-          </Button>
-        </div>
-      </Modal>
+      {/* Add / Edit Modal -- class & section are now dropdowns */}
+      <StudentFormModal
+        open={modal.open}
+        onClose={() => setModal(m => ({ ...m, open: false }))}
+        mode={modal.mode}
+        data={modal.data}
+        onChange={handleFieldChange}
+        onSave={handleSave}
+        saving={saving}
+      />
 
       {/* Enhanced delete confirmation with cascade count */}
       <ConfirmDelete
@@ -655,6 +808,17 @@ export default function Students() {
           if (filter.class_name && importedClasses.includes(filter.class_name))
             fetchStudents(filter.class_name, filter.section || undefined)
         }}
+      />
+
+      <BulkDeleteModal
+        open={bulkDelOpen}
+        onClose={() => setBulkDelOpen(false)}
+        students={students}
+        className={filter.class_name}
+        section={filter.section}
+        bulkDelete={bulkDelete}
+        getBulkMarksCount={getBulkMarksCount}
+        onSuccess={() => fetchStudents(filter.class_name, filter.section || undefined)}
       />
     </div>
   )

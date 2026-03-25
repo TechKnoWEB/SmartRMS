@@ -156,8 +156,3 @@ export async function exportBulkPDF(results, school, onProgress) {
   const win = openWindow(html, `Bulk Report Cards (${total} students)`)
   triggerPrint(win, 800)
 }
-
-// Legacy shim
-export async function exportReportCardPDF() {
-  console.warn('[RMS] exportReportCardPDF is deprecated — use downloadReportCardPDF')
-}

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import clsx from 'clsx'
 
-const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }
+const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-5xl', '3xl': 'max-w-6xl' }
 
 export default function Modal({ open, onClose, title, subtitle, children, size = 'md' }) {
   useEffect(() => {

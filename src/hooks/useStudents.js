@@ -119,9 +119,18 @@ export function useStudents() {
     return count || 0
   }, [])
 
+  // ── Bulk marks count (for bulk-delete cascade preview) ────
+  const getBulkMarksCount = useCallback(async (studentIds) => {
+    if (!studentIds?.length) return 0
+    const { count } = await supabase
+      .from('marks').select('*', { count: 'exact', head: true })
+      .in('student_id', studentIds)
+    return count || 0
+  }, [])
+
   return {
     students, loading,
     fetchStudents, addStudent, updateStudent,
-    deleteStudent, bulkImport, bulkDelete, getMarksCount,
+    deleteStudent, bulkImport, bulkDelete, getMarksCount, getBulkMarksCount,
   }
 }

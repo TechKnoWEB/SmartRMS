@@ -4,7 +4,7 @@ import Button from '../ui/Button'
 import {
   Download, Printer, Trophy, Award, TrendingUp, BookOpen,
   User, Hash, Calendar, CheckCircle, XCircle, Star,
-  GraduationCap, SquareUser, Shield
+  GraduationCap, SquareUser, Shield, CalendarDays
 } from 'lucide-react'
 
 /* ── tiny bar ───────────────────────────────────────────────────────────────── */
@@ -103,7 +103,7 @@ function InfoChip({ icon: Icon, label, value }) {
    ═══════════════════════════════════════════════════════════════════════════════ */
 export default function ReportCard({ result, school, showActions = true, allowDownload = true }) {
   if (!result) return null
-  const { student, subjects, grand_total, grand_max, percentage, grade, result_status, pass, rank, total_students, term_names } = result
+  const { student, subjects, grand_total, grand_max, percentage, grade, result_status, pass, rank, total_students, term_names, attendance_pct } = result
   const tn = term_names || ['Term 1', 'Term 2', 'Term 3']
   const anyInt = subjects.some(s => s.has_internal)
 
@@ -116,10 +116,6 @@ export default function ReportCard({ result, school, showActions = true, allowDo
     { icon: Hash, label: 'Roll No.', value: student.roll },
     { icon: SquareUser, label: 'BSP ID', value: `${student.admission_no}`},
   ]
-
-  const sorted = [...subjects].sort((a, b) => b.subject_percentage - a.subject_percentage)
-  const best = sorted[0]
-  const weak = sorted[sorted.length - 1]
 
   // Column headers for internal layout (without ÷ when hidden)
   const intHeaders = ['Raw', ...(showDivisor ? ['÷'] : []), 'Final', 'Max', '%', 'Grade']
@@ -359,45 +355,23 @@ export default function ReportCard({ result, school, showActions = true, allowDo
             <div className="h-1 w-6 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" />
             <span className="text-[10px] print:text-[8px] font-bold uppercase tracking-[0.15em] text-slate-400">Performance Summary</span>
           </div>
-          <div className="grid gap-3 print:gap-2 grid-cols-2 sm:grid-cols-4 print:grid-cols-4">
+          <div className={`grid gap-3 print:gap-2 grid-cols-2 print:grid-cols-${attendance_pct != null ? 5 : 4} ${attendance_pct != null ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
             <StatCard icon={BookOpen} label="Total Score" value={`${grand_total.toFixed(1)} / ${grand_max.toFixed(1)}`} />
             <StatCard icon={TrendingUp} label="Percentage" value={`${percentage.toFixed(1)}%`} accent progress={percentage} />
             <StatCard icon={Award} label="Grade" value={grade} accent />
             <StatCard icon={pass ? CheckCircle : XCircle} label="Result" value={result_status} status={pass ? 'pass' : 'fail'} />
+            {attendance_pct != null && (
+              <StatCard
+                icon={CalendarDays}
+                label="Attendance"
+                value={`${attendance_pct.toFixed(1)}%`}
+                status={attendance_pct >= 85 ? 'pass' : attendance_pct < 60 ? 'fail' : undefined}
+                accent={attendance_pct >= 60 && attendance_pct < 85}
+                progress={attendance_pct}
+              />
+            )}
           </div>
 
-          {subjects.length > 1 && (
-            <div className="mt-3 print:mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 print:gap-2">
-              {best && (
-                <div className="flex items-center gap-3 rounded-xl bg-emerald-50/50 px-4 py-3 print:px-3 print:py-2 ring-1 ring-emerald-100">
-                  <div className="flex h-8 w-8 print:h-6 print:w-6 items-center justify-center rounded-lg bg-emerald-100 ring-1 ring-emerald-200">
-                    <TrendingUp className="h-4 w-4 print:h-3 print:w-3 text-emerald-600" />
-                  </div>
-                  <div>
-                    <span className="text-[9px] print:text-[7px] font-bold uppercase tracking-wider text-emerald-500">Strongest Subject</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm print:text-[11px] font-bold text-emerald-800">{best.subject_name}</span>
-                      <span className="text-[11px] print:text-[9px] font-bold text-emerald-600">{best.subject_percentage.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {weak && weak.subject_name !== best?.subject_name && (
-                <div className="flex items-center gap-3 rounded-xl bg-amber-50/50 px-4 py-3 print:px-3 print:py-2 ring-1 ring-amber-100">
-                  <div className="flex h-8 w-8 print:h-6 print:w-6 items-center justify-center rounded-lg bg-amber-100 ring-1 ring-amber-200">
-                    <BookOpen className="h-4 w-4 print:h-3 print:w-3 text-amber-600" />
-                  </div>
-                  <div>
-                    <span className="text-[9px] print:text-[7px] font-bold uppercase tracking-wider text-amber-500">Needs Attention</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm print:text-[11px] font-bold text-amber-800">{weak.subject_name}</span>
-                      <span className="text-[11px] print:text-[9px] font-bold text-amber-600">{weak.subject_percentage.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* ── signature ── */}
