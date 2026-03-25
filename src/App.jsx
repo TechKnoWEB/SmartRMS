@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import { Analytics as VercelAnalytics } from '@vercel/analytics/react'
 import { useAuth }      from './context/AuthContext'
 import AppLayout        from './components/layout/AppLayout'
 import LoginPage        from './pages/LoginPage'
@@ -123,39 +124,41 @@ export default function App() {
   if (ENV_ERRORS.length > 0) return <EnvErrorScreen />
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        {/* Landing page — public */}
-        <Route path="/home" element={<LandingPage />} />
+    <>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Landing page — public */}
+          <Route path="/home" element={<LandingPage />} />
 
-        {/* Public */}
-        <Route path="/login"          element={<LoginPage />} />
-        <Route path="/portal"         element={<StudentPortal />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Public */}
+          <Route path="/login"          element={<LoginPage />} />
+          <Route path="/portal"         element={<StudentPortal />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* Platform-level (no school session required) */}
-        <Route path="/register"   element={<RegisterSchool />} />
-        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+          {/* Platform-level (no school session required) */}
+          <Route path="/register"   element={<RegisterSchool />} />
+          <Route path="/superadmin" element={<SuperAdminDashboard />} />
 
-        {/* Authenticated app shell */}
-        <Route path="/" element={<Guard><AppLayout /></Guard>}>
-          <Route index            element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="students"  element={<Students />} />
-          <Route path="marks"     element={<MarksEntry />} />
-          <Route path="results"   element={<Results />} />
-          <Route path="analytics" element={<Analytics />} />
-          <Route path="attendance"    element={<Attendance />} />
-          <Route path="promotion"     element={<Guard role="admin"><BulkPromotion /></Guard>} />
+          {/* Authenticated app shell */}
+          <Route path="/" element={<Guard><AppLayout /></Guard>}>
+            <Route index            element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="students"  element={<Students />} />
+            <Route path="marks"     element={<MarksEntry />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="attendance"    element={<Attendance />} />
+            <Route path="promotion"     element={<Guard role="admin"><BulkPromotion /></Guard>} />
 
-          {/* Admin-only routes — Guard blocks teachers from direct URL access */}
-          <Route path="audit"    element={<Guard role="admin"><AuditTrail /></Guard>} />
-          <Route path="users"    element={<Guard role="admin"><Users /></Guard>} />
-          <Route path="settings" element={<Guard role="admin"><Settings /></Guard>} />
-        </Route>
+            {/* Admin-only routes — Guard blocks teachers from direct URL access */}
+            <Route path="audit"    element={<Guard role="admin"><AuditTrail /></Guard>} />
+            <Route path="users"    element={<Guard role="admin"><Users /></Guard>} />
+            <Route path="settings" element={<Guard role="admin"><Settings /></Guard>} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+      <VercelAnalytics />
+    </>
   )
 }
