@@ -566,11 +566,11 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="School Name" value={schoolForm.school_name}
               onChange={e => setSchoolForm(f => ({ ...f, school_name: e.target.value }))} />
-            <Input label="Address" value={schoolForm.tagline}
+            <Input label="Tagline / Motto" value={schoolForm.tagline}
               onChange={e => setSchoolForm(f => ({ ...f, tagline: e.target.value }))} />
             <Input label="Academic Session" placeholder="e.g. 2026-27" value={schoolForm.academic_session}
               onChange={e => setSchoolForm(f => ({ ...f, academic_session: e.target.value }))} />
-            <Input label="Tagline / Motto" value={schoolForm.address}
+            <Input label="Address" value={schoolForm.address}
               onChange={e => setSchoolForm(f => ({ ...f, address: e.target.value }))} />
             <Input label="Contact Email" type="email" value={schoolForm.contact_email}
               onChange={e => setSchoolForm(f => ({ ...f, contact_email: e.target.value }))} />
