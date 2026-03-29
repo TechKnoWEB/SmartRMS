@@ -15,7 +15,7 @@ import {
   BookOpen, X, Check, Key, Users as UsersIcon,
   UserPlus, Shield, Clock, Search, ChevronRight,
   Eye, EyeOff, AlertTriangle, CheckCircle2,
-  GraduationCap, Pencil, UserCog, Layers,
+  GraduationCap, Pencil, UserCog, Layers, Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -288,6 +288,7 @@ export default function Users() {
   const [saving,        setSaving]        = useState(false)
   const [subjectPanel,  setSubjectPanel]  = useState(null)
   const [changePwModal, setChangePwModal] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)   // null | user object
 
   const load = async () => {
     setLoading(true)
@@ -354,6 +355,25 @@ export default function Users() {
     toast.success(modal.mode === 'add' ? 'User created!' : 'User updated!')
     setModal(m => ({ ...m, open: false }))
     load()
+  }
+
+  const handleDelete = async () => {
+    const u = deleteConfirm
+    if (!u) return
+    const { error } = await supabase.from('users')
+      .delete()
+      .eq('user_id', u.user_id)
+      .eq('school_id', user.school_id)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success(`User "${u.user_id}" deleted.`)
+      logAudit({ saved_by: user.user_id, school_id: user.school_id,
+        action_type: 'USER_DISABLED', status: 'Deleted',
+        notes: `Permanently deleted user: ${u.user_id} (${u.role})` })
+      setDeleteConfirm(null)
+      load()
+    }
   }
 
   const toggleActive = async (u) => {
@@ -590,6 +610,14 @@ export default function Users() {
                               : <ShieldCheck className="w-3.5 h-3.5 text-gray-500 group-hover/btn:text-green-600 dark:group-hover/btn:text-green-400" />
                             }
                           </button>
+                          <button
+                            onClick={() => setDeleteConfirm(u)}
+                            disabled={u.user_id === user.user_id}
+                            className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group/btn disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-gray-100 dark:disabled:hover:bg-gray-700"
+                            title={u.user_id === user.user_id ? 'Cannot delete your own account' : 'Delete User'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-gray-500 group-hover/btn:text-red-600 dark:group-hover/btn:text-red-400" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -703,6 +731,52 @@ export default function Users() {
       {/* ═══ Change Password Modal ═══ */}
       <ChangePasswordModal open={!!changePwModal} onClose={() => setChangePwModal(null)}
         targetUserId={changePwModal} />
+
+      {/* ═══ Delete Confirmation Modal ═══ */}
+      <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} title="Delete User" size="sm">
+        {deleteConfirm && (
+          <div className="space-y-5">
+            {/* User identity */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700">
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${roleGradient[deleteConfirm.role] || 'from-gray-400 to-gray-500'} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                <span className="text-sm font-bold text-white">
+                  {(deleteConfirm.name || '?')[0].toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-100">{deleteConfirm.name}</p>
+                <p className="text-xs text-gray-400 font-mono">{deleteConfirm.user_id} · <span className="capitalize">{deleteConfirm.role}</span></p>
+              </div>
+            </div>
+
+            {/* Caution banner */}
+            <div className="flex gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60">
+              <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
+                <p className="text-sm font-bold text-red-700 dark:text-red-400">This action cannot be undone.</p>
+                <ul className="text-xs text-red-600/80 dark:text-red-400/70 space-y-1 list-disc list-inside">
+                  <li>The user account will be permanently removed.</li>
+                  <li>All subject assignments for this user will be deleted.</li>
+                  <li>Audit log entries made by this user will be retained for compliance.</li>
+                  {deleteConfirm.role === 'admin' && (
+                    <li className="font-semibold">You are deleting an admin account — ensure at least one admin remains.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-1 border-t border-gray-100 dark:border-gray-700">
+              <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+              <Button
+                onClick={handleDelete}
+                className="!bg-red-600 hover:!bg-red-700 !border-red-600 hover:!border-red-700 !shadow-red-200 dark:!shadow-red-900/40"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

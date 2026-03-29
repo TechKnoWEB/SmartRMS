@@ -21,6 +21,8 @@ const BulkPromotion       = lazy(() => import('./pages/admin/BulkPromotion'))
 const Attendance          = lazy(() => import('./pages/admin/Attendance'))
 const LandingPage         = lazy(() => import('./pages/LandingPage'))
 const ResetPassword       = lazy(() => import('./pages/ResetPassword'))
+const ExamLabels          = lazy(() => import('./pages/admin/ExamLabels'))
+const BulkIDCards         = lazy(() => import('./pages/admin/BulkIDCards'))
 
 // ── Env setup screen ─────────────────────────────────────────────────────────
 // Rendered instead of a blank page when .env is missing or misconfigured.
@@ -150,6 +152,8 @@ export default function App() {
 
           {/* Admin-only routes — Guard blocks teachers from direct URL access */}
           <Route path="audit"    element={<Guard role="admin"><AuditTrail /></Guard>} />
+          <Route path="exam-labels" element={<ExamLabels />} />
+          <Route path="id-cards"   element={<Guard role="admin"><BulkIDCards /></Guard>} />
           <Route path="users"    element={<Guard role="admin"><Users /></Guard>} />
           <Route path="settings" element={<Guard role="admin"><Settings /></Guard>} />
         </Route>
