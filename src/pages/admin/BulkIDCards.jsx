@@ -103,7 +103,7 @@ function formatDob(val) {
   return `${d}-${m}-${y}`
 }
 
-function normalizeRow(raw) {
+function normalizeRow(raw, index) {
   const out = {}
   for (const [key, val] of Object.entries(raw)) {
     const normalized = key.toString().trim().toLowerCase().replace(/[_\s]+/g, ' ')
@@ -123,7 +123,8 @@ function normalizeRow(raw) {
       }
     }
   }
-  out._id = out.admission_no || out.name || Math.random().toString(36).slice(2, 10)
+  // Bug fix: always include row index to prevent _id collision for duplicate names
+  out._id = `${out.admission_no || out.name || 'row'}_${index}`
   return out
 }
 
@@ -138,7 +139,7 @@ function parseExcelFile(file) {
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
         const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' })
         const students = jsonData
-          .map(normalizeRow)
+          .map((row, i) => normalizeRow(row, i))
           .filter(s => s.name)
         resolve({ students, rawColumns: jsonData.length > 0 ? Object.keys(jsonData[0]) : [], totalRows: jsonData.length })
       } catch (err) {
@@ -214,8 +215,8 @@ function barcodeUrl(student, barcodeType = 'pdf417') {
   if (barcodeType === 'qrcode') {
     return `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(data)}`
   }
-  // Default: PDF417
-  return `https://barcodeapi.org/api/pdf417/${encodeURIComponent(data)}`
+  // PDF417 via bwip-js public API
+  return `https://bwipjs-api.metafloor.com/?bcid=pdf417&text=${encodeURIComponent(data)}&scale=2&height=8&includetext=false`
 }
 
 /* ================================================================
@@ -260,7 +261,6 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
   const rowGap = isCompact ? '4mm' : '6mm'
   const photoW = isCompact ? '16mm' : '20mm'
   const photoH = isCompact ? '20mm' : '26mm'
-  const qrSize      = isCompact ? '9mm' : '11mm'
   const pdf417StripH = isCompact ? '8mm' : '8mm'
 
   const getTemplateStyles = () => {
@@ -290,10 +290,13 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
     }
   }
 
-  // Font sizes — "highlighted" fields (Father, Blood Group, Mother, DOB) get a bump
-  const fieldLabelSize = isCompact ? '3.8pt' : '4.5pt'
-  const fieldValueSize = isCompact ? '4.5pt' : '5.5pt'
-  const highlightedValueSize = isCompact ? '5pt' : '6pt'
+  // Font sizes — balanced so all rows (Father→Address) sit above the footer
+  const fieldLabelSize        = isCompact ? '3.5pt'   : '5.5pt'
+  const fieldValueSize        = isCompact ? '3.5pt'   : '5.5pt'
+  const highlightedLabelSize  = isCompact ? '3.5pt'   : '5.5pt'
+  const highlightedValueSize  = isCompact ? '3.5pt'   : '5.5pt'
+  const addrLabelSize         = isCompact ? '3.5pt'   : '5.5pt'
+  const addrValueSize         = isCompact ? '3.5pt'   : '5.5pt'
 
   const pageCSS = `
     @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap');
@@ -325,11 +328,11 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
       overflow:hidden; flex-shrink:0;
     }
     .photo-box img { width:100%; height:100%; object-fit:cover; display:block; }
-    .qr-box { width:${qrSize}; height:${qrSize}; flex-shrink:0; border:0.4pt solid #e5e7eb; border-radius:0.5mm; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#fff; }
-    .qr-box img { width:100%; height:100%; object-fit:contain; display:block; }
     .card-footer { width:100%; height:${pdf417StripH}; background:#fff; border-top:0.4pt solid #e8e8e8; flex-shrink:0; display:flex; align-items:stretch; overflow:hidden; }
-    .footer-pdf417 { width:60%; padding:0.8mm 1.5mm; display:flex; align-items:center; overflow:hidden; }
-    .footer-pdf417 img { width:100%; height:auto; max-height:100%; display:block; image-rendering:crisp-edges; }
+    .footer-pdf417 { width:60%; padding:0.8mm 1.5mm; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .footer-pdf417 img { width:90%; height:auto; max-height:100%; display:block; image-rendering:crisp-edges; }
+    .footer-qr { width:${isCompact?'6mm':'7mm'}; height:100%; flex-shrink:0; padding:0.5mm; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; }
+    .footer-qr img { width:100%; height:auto; object-fit:contain; display:block; }
     .footer-sig { width:40%; padding:0.5mm 1.5mm 0.5mm 1mm; display:flex; flex-direction:column; align-items:flex-end; justify-content:center; border-left:0.3pt solid #f0f0f0; overflow:hidden; gap:0.2mm; }
     .footer-sig .sig-img { height:${isCompact ? '3.5mm' : '4.5mm'}; max-width:100%; object-fit:contain; display:block; }
     .footer-sig .sig-label { font-size:2.5pt; color:#aaa; text-align:right; letter-spacing:0.04em; white-space:nowrap; }
@@ -344,10 +347,10 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
     .field-label { font-size:${fieldLabelSize}; color:#888; min-width:${isCompact?'8mm':'11mm'}; flex-shrink:0; text-transform:uppercase; letter-spacing:0.03em; font-weight:500; }
     .field-value { font-size:${fieldValueSize}; font-weight:700; color:#222; flex:1; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .field-value.highlighted { font-size:${highlightedValueSize}; font-weight:800; color:#111; }
-    .field-label.highlighted { font-size:${isCompact?'4pt':'4.8pt'}; font-weight:600; color:#666; }
+    .field-label.highlighted { font-size:${highlightedLabelSize}; font-weight:600; color:#888; }
     .field-row-addr { display:flex; gap:1.5mm; align-items:baseline; }
-    .addr-label { font-size:${isCompact?'3pt':'3.5pt'}; color:#aaa; min-width:${isCompact?'8mm':'11mm'}; flex-shrink:0; text-transform:uppercase; letter-spacing:0.03em; font-weight:500; }
-    .addr-value { font-size:${isCompact?'3.5pt':'4pt'}; font-weight:600; color:#555; flex:1; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .addr-label { font-size:${addrLabelSize}; color:#888; min-width:${isCompact?'8mm':'11mm'}; flex-shrink:0; text-transform:uppercase; letter-spacing:0.03em; font-weight:500; }
+    .addr-value { font-size:${addrValueSize}; font-weight:600; color:#222; flex:1; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .footer-bar { background:${colors.primary}; height:1.2mm; flex-shrink:0; opacity:0.8; }
     ${getTemplateStyles()}
     @media print { .page:last-child { page-break-after:avoid; } }
@@ -431,7 +434,6 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
           <div class="card-body">
             <div class="card-left">
               <div class="photo-box">${photoContent}</div>
-              ${barcodeType === 'qrcode' ? `<div class="qr-box"><img src="${barcodeUrl(s, 'qrcode')}" alt="QR Code" /></div>` : ''}
             </div>
             <div class="card-right">
               <div class="top-row">
@@ -458,7 +460,10 @@ async function buildPrintHtml(students, template, schoolConfig, colorTheme, phot
           </div>
           <div class="card-footer">
             <div class="footer-pdf417">
-              ${barcodeType === 'pdf417' ? `<img src="${barcodeUrl(s, 'pdf417')}" alt="Barcode" />` : ''}
+              ${barcodeType === 'pdf417'
+                ? `<img src="${barcodeUrl(s, 'pdf417')}" alt="Barcode" />`
+                : `<div class="footer-qr"><img src="${barcodeUrl(s, 'qrcode')}" alt="QR Code" /></div>`
+              }
             </div>
             <div class="footer-sig">
               ${schoolConfig.signatureDataUrl
@@ -534,9 +539,11 @@ function FileDropZone({ accept, label, description, icon: Icon, onFiles, multipl
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setDragOver(false)
-    const files = multiple
-      ? Array.from(e.dataTransfer.files)
-      : [e.dataTransfer.files[0]]
+    const dropped = Array.from(e.dataTransfer.files)
+    if (!multiple && dropped.length > 1) {
+      toast.error('Only one file at a time. Using the first file.')
+    }
+    const files = multiple ? dropped : [dropped[0]]
     if (files[0]) onFiles(files.filter(Boolean))
   }, [onFiles, multiple])
 
@@ -585,30 +592,50 @@ function FileDropZone({ accept, label, description, icon: Icon, onFiles, multipl
 
 function PhotoFolderPicker({ onPhotosLoaded, photoCount }) {
   const inputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
 
-  const handleFiles = useCallback((e) => {
-    const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'))
-    if (files.length) {
-      onPhotosLoaded(files)
-      toast.success(`${files.length} photo${files.length !== 1 ? 's' : ''} loaded`)
+  const processFiles = useCallback((files) => {
+    const images = files.filter(f => f.type.startsWith('image/'))
+    if (images.length) {
+      onPhotosLoaded(images)
+      toast.success(`${images.length} photo${images.length !== 1 ? 's' : ''} loaded`)
     } else {
       toast.error('No image files found in selection')
     }
-    e.target.value = ''
   }, [onPhotosLoaded])
+
+  const handleInputChange = useCallback((e) => {
+    const files = Array.from(e.target.files)
+    if (files.length) processFiles(files)
+    e.target.value = ''
+  }, [processFiles])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length) processFiles(files)
+  }, [processFiles])
 
   return (
     <div className="space-y-3">
       <div
         onClick={() => inputRef.current?.click()}
-        className="cursor-pointer rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all p-5 bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/10"
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        className={`cursor-pointer rounded-xl border-2 border-dashed transition-all p-5
+          ${dragOver
+            ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 scale-[1.01]'
+            : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 dark:hover:border-emerald-500 bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/10'
+          }`}
       >
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
           multiple
-          onChange={handleFiles}
+          onChange={handleInputChange}
           className="hidden"
         />
         <div className="flex flex-col items-center text-center gap-2">
@@ -709,7 +736,7 @@ function BarcodeTypeCard({ type, config, isActive, onClick }) {
       `}
     >
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive ? 'bg-indigo-100 dark:bg-indigo-800/40' : 'bg-gray-100 dark:bg-gray-700'}`}>
-        <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`} />
+        <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`} />
       </div>
       <div className="flex-1 min-w-0">
         <span className={`text-xs font-bold block ${isActive ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'}`}>
@@ -724,12 +751,14 @@ function BarcodeTypeCard({ type, config, isActive, onClick }) {
   )
 }
 
-function IDCardPreview({ student, schoolName, customAddress, colors, template, photoUrl, selected, onToggle, barcodeType }) {
+function IDCardPreview({ student, schoolName, customAddress, colors, template, photoUrl, selected, onToggle }) {
   const isMinimal = template === 'minimal'
 
   return (
     <div
       role="button"
+      aria-label={`${selected ? 'Deselect' : 'Select'} ID card for ${student.name || 'student'}`}
+      aria-pressed={selected}
       onClick={onToggle}
       className={`
         relative cursor-pointer rounded-xl border-2 transition-all duration-200 select-none overflow-hidden
@@ -783,20 +812,12 @@ function IDCardPreview({ student, schoolName, customAddress, colors, template, p
       {/* Body */}
       <div className="p-2 flex gap-2 bg-white dark:bg-gray-800">
         {/* Photo */}
-        <div className="w-10 flex flex-col gap-1 flex-shrink-0">
-          <div className="w-10 h-12 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+        <div className="w-10 flex-shrink-0">
+          <div className="w-10 h-14 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
             {photoUrl ? (
               <img src={photoUrl} alt="" className="w-full h-full object-cover" />
             ) : (
               <span className="text-[7px] text-gray-400 dark:text-gray-500 text-center leading-tight">PHOTO</span>
-            )}
-          </div>
-          {/* Mini barcode/QR preview indicator */}
-          <div className="w-10 h-4 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-            {barcodeType === 'qrcode' ? (
-              <QrCode className="w-2.5 h-2.5 text-gray-400" />
-            ) : (
-              <BarChart3 className="w-2.5 h-2.5 text-gray-400" />
             )}
           </div>
         </div>
@@ -851,8 +872,13 @@ function IDCardPreview({ student, schoolName, customAddress, colors, template, p
 function ColumnMappingTable({ rawColumns, sampleStudent }) {
   const mapped = {}
   rawColumns.forEach(col => {
+    // Mirror the 3-step normalization from normalizeRow for accurate display
     const norm = col.toString().trim().toLowerCase().replace(/[_\s]+/g, ' ')
-    const target = FIELD_ALIASES[norm] || FIELD_ALIASES[norm.replace(/ /g, '_')]
+    let target = FIELD_ALIASES[norm] || FIELD_ALIASES[norm.replace(/ /g, '_')]
+    if (!target) {
+      const clean = norm.replace(/[^a-z0-9 ]/g, '').trim()
+      target = FIELD_ALIASES[clean] || FIELD_ALIASES[clean.replace(/ /g, '_')]
+    }
     mapped[col] = target || null
   })
 
@@ -949,17 +975,17 @@ export default function BulkIDCards() {
 
   // ── Build photo map when photos change ────────────────────────
   useEffect(() => {
-    if (photoFiles.length > 0) {
-      const map = buildPhotoMap(photoFiles)
-      setPhotoMap(map)
-    } else {
+    if (photoFiles.length === 0) {
       setPhotoMap(null)
+      return
     }
+    // Build map and capture it locally so the cleanup has a stable reference
+    // (not a stale photoMap state value which was null on first run)
+    const map = buildPhotoMap(photoFiles)
+    setPhotoMap(map)
     return () => {
-      if (photoMap) {
-        const seen = new Set()
-        photoMap.forEach(url => { if (!seen.has(url)) { URL.revokeObjectURL(url); seen.add(url) } })
-      }
+      const seen = new Set()
+      map.forEach(url => { if (!seen.has(url)) { URL.revokeObjectURL(url); seen.add(url) } })
     }
   }, [photoFiles])
 
@@ -987,10 +1013,19 @@ export default function BulkIDCards() {
     })
   }, [students, filterClass, filterSection, searchQuery])
 
+  // Students visible in current filter view that are selected (used for preview panel display)
   const selectedStudents = useMemo(
     () => filteredStudents.filter(s => selected.has(s._id)),
     [filteredStudents, selected]
   )
+
+  // ALL selected students across all filters (used for printing)
+  const allSelectedStudents = useMemo(
+    () => students.filter(s => selected.has(s._id)),
+    [students, selected]
+  )
+
+  const isFilterActive = !!(filterClass || filterSection || searchQuery)
 
   const photoMatchCount = useMemo(
     () => filteredStudents.filter(s => findPhoto(s, photoMap)).length,
@@ -999,7 +1034,7 @@ export default function BulkIDCards() {
 
   const tmpl = TEMPLATES[template]
   const allSelected = filteredStudents.length > 0 && filteredStudents.every(s => selected.has(s._id))
-  const noneSelected = selectedStudents.length === 0
+  const noneSelected = allSelectedStudents.length === 0
 
   // ── Excel import ──────────────────────────────────────────────
   const handleExcelFiles = useCallback(async (files) => {
@@ -1059,7 +1094,7 @@ export default function BulkIDCards() {
 
   // ── Print ─────────────────────────────────────────────────────
   const handlePrint = async () => {
-    if (!selectedStudents.length) {
+    if (!allSelectedStudents.length) {
       toast.error('No students selected to print.')
       return
     }
@@ -1079,7 +1114,7 @@ export default function BulkIDCards() {
         signatureDataUrl: authorisedSignature,
       }
 
-      const html = await buildPrintHtml(selectedStudents, template, schoolConfig, activeColors, photoMap, barcodeType)
+      const html = await buildPrintHtml(allSelectedStudents, template, schoolConfig, activeColors, photoMap, barcodeType)
       const win = window.open('', '_blank', 'width=960,height=800,scrollbars=yes')
 
       if (!win) {
@@ -1091,7 +1126,7 @@ export default function BulkIDCards() {
       win.document.write(html)
       win.document.close()
       toast.dismiss(loadingToast)
-      toast.success(`Printing ${selectedStudents.length} ID card${selectedStudents.length !== 1 ? 's' : ''}`)
+      toast.success(`Printing ${allSelectedStudents.length} ID card${allSelectedStudents.length !== 1 ? 's' : ''}`)
     } catch (err) {
       toast.dismiss(loadingToast)
       toast.error(`Print failed: ${err.message}`)
@@ -1165,6 +1200,11 @@ export default function BulkIDCards() {
 
   // ── Clear all data ────────────────────────────────────────────
   const clearAllData = () => {
+    // Revoke blob URLs before clearing to avoid memory leaks
+    if (photoMap) {
+      const seen = new Set()
+      photoMap.forEach(url => { if (!seen.has(url)) { URL.revokeObjectURL(url); seen.add(url) } })
+    }
     setStudents([])
     setRawColumns([])
     setSelected(new Set())
@@ -1215,14 +1255,14 @@ export default function BulkIDCards() {
             )}
             <Button
               onClick={handlePrint}
-              disabled={!selectedStudents.length}
+              disabled={!allSelectedStudents.length}
               className="!bg-white !text-indigo-700 hover:!bg-indigo-50 !shadow-lg !shadow-indigo-900/20 !font-semibold !border-0 disabled:!opacity-50 disabled:!cursor-not-allowed"
             >
               <Printer className="w-4 h-4" />
               Print
-              {selectedStudents.length > 0 && (
+              {allSelectedStudents.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                  {selectedStudents.length}
+                  {allSelectedStudents.length}
                 </span>
               )}
             </Button>
@@ -1237,7 +1277,7 @@ export default function BulkIDCards() {
             { icon: Palette,         label: 'Custom colours' },
             { icon: Layout,          label: '4 templates' },
             { icon: QrCode,          label: 'Barcode / QR Code' },
-            { icon: WifiOff,         label: 'Works offline' },
+            { icon: WifiOff,         label: 'Data works offline' },
           ].map(({ icon: Icon, label }) => (
             <div key={label} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/15 backdrop-blur-sm text-white text-[11px] font-medium">
               <Icon className="w-3 h-3" />
@@ -1697,11 +1737,11 @@ export default function BulkIDCards() {
                   </div>
                   {allSelected ? 'Deselect All' : 'Select All'}
                 </button>
-                <Button onClick={handlePrint} disabled={!selectedStudents.length} size="sm"
+                <Button onClick={handlePrint} disabled={!allSelectedStudents.length} size="sm"
                   className="!border-0 disabled:!opacity-50"
                   style={{ background: activeColors.primary }}>
                   <Printer className="w-3.5 h-3.5" />
-                  Print ({selectedStudents.length})
+                  Print ({allSelectedStudents.length})
                 </Button>
               </div>
             </div>
@@ -1761,6 +1801,16 @@ export default function BulkIDCards() {
             </div>
           )}
 
+          {isFilterActive && allSelectedStudents.length > selectedStudents.length && (
+            <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40">
+              <Info className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Filter active — showing {selectedStudents.length} selected here, but{' '}
+                <strong>{allSelectedStudents.length} total</strong> will be printed (including hidden selections).
+              </p>
+            </div>
+          )}
+
           {/* Preview grid */}
           {filteredStudents.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -1775,7 +1825,6 @@ export default function BulkIDCards() {
                   photoUrl={findPhoto(s, photoMap)}
                   selected={selected.has(s._id)}
                   onToggle={() => toggleOne(s._id)}
-                  barcodeType={barcodeType}
                 />
               ))}
             </div>
@@ -1793,7 +1842,7 @@ export default function BulkIDCards() {
               </span>
               <span className="w-1 h-1 rounded-full bg-gray-300" />
               <span className="inline-flex items-center gap-1.5">
-                <CreditCard className="w-3 h-3" />{selectedStudents.length} to print
+                <CreditCard className="w-3 h-3" />{allSelectedStudents.length} to print
               </span>
               {photoMap && (
                 <>
@@ -1814,7 +1863,7 @@ export default function BulkIDCards() {
                 {tmpl.label}
               </span>
             </p>
-            <Button onClick={handlePrint} disabled={!selectedStudents.length}
+            <Button onClick={handlePrint} disabled={!allSelectedStudents.length}
               className="!border-0 disabled:!opacity-50"
               style={{ background: activeColors.primary }}>
               <Printer className="w-4 h-4" />

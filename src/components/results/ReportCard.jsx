@@ -157,14 +157,18 @@ export default function ReportCard({ result, school, showActions = true, allowDo
           <div className="absolute -left-8 -bottom-8 h-32 w-32 rounded-full bg-gradient-to-tr from-violet-100/30 to-indigo-100/20 blur-2xl print:hidden" />
 
           <div className="relative px-6 py-7 sm:px-10 print:px-6 print:py-4 text-center">
-            <div className="mx-auto mb-3 print:mb-2 flex h-14 w-14 print:h-10 print:w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-200/50 ring-4 ring-white print:shadow-md">
-              <Shield className="h-7 w-7 print:h-5 print:w-5 text-white" />
-            </div>
+            {school?.logo_url ? (
+              <img src={school.logo_url} alt="School logo" className="mx-auto mb-3 print:mb-2 h-14 w-14 print:h-10 print:w-10 rounded-2xl object-contain bg-white shadow-lg shadow-indigo-200/50 ring-4 ring-white print:shadow-md p-1" />
+            ) : (
+              <div className="mx-auto mb-3 print:mb-2 flex h-14 w-14 print:h-10 print:w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-200/50 ring-4 ring-white print:shadow-md">
+                <Shield className="h-7 w-7 print:h-5 print:w-5 text-white" />
+              </div>
+            )}
             <h1 className="text-2xl sm:text-3xl print:text-xl font-black tracking-tight text-slate-900">{school?.school_name || 'School Name'}</h1>
-            {(school?.tagline || school?.academic_session) && (
+            {(school?.address || school?.academic_session) && (
               <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-                {school.tagline && <span className="text-xs print:text-[10px] font-medium text-slate-500 italic">{school.tagline}</span>}
-                {school.tagline && school.academic_session && <span className="h-4 w-px bg-slate-200 hidden sm:block" />}
+                {school.address && <span className="text-xs print:text-[10px] font-medium text-slate-500 italic">{school.address}</span>}
+                {school.address && school.academic_session && <span className="h-4 w-px bg-slate-200 hidden sm:block" />}
                 {school.academic_session && (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] print:text-[9px] font-semibold text-indigo-600 ring-1 ring-indigo-100">
                     <Calendar className="h-3 w-3 print:h-2.5 print:w-2.5" /> Session {school.academic_session}
@@ -301,7 +305,7 @@ export default function ReportCard({ result, school, showActions = true, allowDo
                         <td className="border-b border-r border-slate-100 px-2 py-2.5 print:px-1 print:py-1 text-center text-[12px] print:text-[10px] font-black text-slate-900">{sub.final_total.toFixed(1)}</td>
                         <td className="border-b border-r border-slate-100 px-2 py-2.5 print:px-1 print:py-1 text-center text-[12px] print:text-[10px] text-slate-400 font-medium">{sub.final_max.toFixed(1)}</td>
                         <td className="border-b border-r border-slate-100 px-2 py-2.5 print:px-1 print:py-1 text-center text-[12px] print:text-[10px] tabular-nums font-bold">
-                          <span className={sub.subject_percentage >= 75 ? 'text-emerald-600' : sub.subject_percentage >= 50 ? 'text-blue-600' : sub.subject_percentage >= 33 ? 'text-amber-600' : 'text-red-600'}>{sub.subject_percentage.toFixed(1)}%</span>
+                          <span className={sub.subject_percentage >= 75 ? 'text-emerald-600' : sub.subject_percentage >= 50 ? 'text-blue-600' : sub.subject_percentage >= 25 ? 'text-amber-600' : 'text-red-600'}>{sub.subject_percentage.toFixed(1)}%</span>
                         </td>
                         <td className="border-b border-slate-100 px-2 py-2.5 print:px-1 print:py-1 text-center"><GradeBadge grade={sub.subject_grade} /></td>
                       </>
@@ -313,7 +317,7 @@ export default function ReportCard({ result, school, showActions = true, allowDo
                         <td className="border-b border-r border-slate-100 px-3 py-2.5 print:px-1.5 print:py-1 text-center text-[12px] print:text-[10px] font-black text-slate-900 tabular-nums">{sub.final_total.toFixed(1)}</td>
                         <td className="border-b border-r border-slate-100 px-3 py-2.5 print:px-1.5 print:py-1 text-center text-[12px] print:text-[10px] text-slate-400 tabular-nums font-medium">{sub.final_max.toFixed(1)}</td>
                         <td className="border-b border-r border-slate-100 px-3 py-2.5 print:px-1.5 print:py-1 text-center text-[12px] print:text-[10px] tabular-nums font-bold">
-                          <span className={sub.subject_percentage >= 75 ? 'text-emerald-600' : sub.subject_percentage >= 50 ? 'text-blue-600' : sub.subject_percentage >= 33 ? 'text-amber-600' : 'text-red-600'}>{sub.subject_percentage.toFixed(1)}%</span>
+                          <span className={sub.subject_percentage >= 75 ? 'text-emerald-600' : sub.subject_percentage >= 50 ? 'text-blue-600' : sub.subject_percentage >= 25 ? 'text-amber-600' : 'text-red-600'}>{sub.subject_percentage.toFixed(1)}%</span>
                         </td>
                         <td className="border-b border-slate-100 px-3 py-2.5 print:px-1.5 print:py-1 text-center"><GradeBadge grade={sub.subject_grade} /></td>
                       </>
@@ -341,7 +345,7 @@ export default function ReportCard({ result, school, showActions = true, allowDo
                 <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-sm print:text-[11px] font-black text-indigo-700 tabular-nums">{grand_total.toFixed(1)}</td>
                 <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-[12px] print:text-[10px] text-slate-500 tabular-nums font-medium">{grand_max.toFixed(1)}</td>
                 <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-sm print:text-[11px] font-black tabular-nums">
-                  <span className={percentage >= 75 ? 'text-emerald-600' : percentage >= 50 ? 'text-blue-600' : percentage >= 33 ? 'text-amber-600' : 'text-red-600'}>{percentage.toFixed(1)}%</span>
+                  <span className={percentage >= 75 ? 'text-emerald-600' : percentage >= 50 ? 'text-blue-600' : percentage >= 25 ? 'text-amber-600' : 'text-red-600'}>{percentage.toFixed(1)}%</span>
                 </td>
                 <td className="border-t-2 border-slate-300 px-3 py-3 print:px-1 print:py-1.5 text-center"><GradeBadge grade={grade} size="lg" /></td>
               </tr>

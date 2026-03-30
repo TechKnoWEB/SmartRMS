@@ -1,12 +1,6 @@
 // src/pages/admin/Results.jsx
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-
-// FIX 4.1: Best-effort audit logger
-async function logAudit(payload) {
-  const { error } = await supabase.from('entry_logs').insert(payload)
-  if (error) console.error('[RMS] audit log failed:', error.message, payload)
-}
 import { useAuth } from '../../context/AuthContext'
 import { buildStudentResult, rankComparator } from '../../utils/grades'
 import { useClasses, useSections } from '../../hooks/useSections'
@@ -38,6 +32,12 @@ import {
   BookOpen,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+// Best-effort audit logger
+async function logAudit(payload) {
+  const { error } = await supabase.from('entry_logs').insert(payload)
+  if (error) console.error('[RMS] audit log failed:', error.message, payload)
+}
 
 /* ─── tiny rank-medal helper ─── */
 const RankBadge = ({ rank }) => {
@@ -169,7 +169,16 @@ export default function Results() {
     }
 
     const studentIds = students.map((s) => s.id)
-    const { data: allMarks } = await supabase.from('marks').select('*').in('student_id', studentIds)
+    const [{ data: allMarks }, { data: gradingCfg }, { data: schoolRow }] = await Promise.all([
+      supabase.from('marks').select('*').in('student_id', studentIds).eq('school_id', user.school_id),
+      supabase.from('grading_config').select('*').eq('school_id', user.school_id),
+      supabase.from('schools').select('pass_mark').eq('id', user.school_id).single(),
+    ])
+
+    const resultOptions = {
+      passMark: schoolRow?.pass_mark ?? 25,
+      gradeBands: gradingCfg?.length ? gradingCfg : null,
+    }
 
     const marksByStudent = {}
     ;(allMarks || []).forEach((m) => {
@@ -178,7 +187,7 @@ export default function Results() {
     })
 
     const built = students.map((stu) =>
-      buildStudentResult(stu, cfgRows, marksByStudent[stu.id] || []),
+      buildStudentResult(stu, cfgRows, marksByStudent[stu.id] || [], resultOptions),
     )
     built.sort(rankComparator)
     built.forEach((r, i) => {

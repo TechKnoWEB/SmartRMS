@@ -621,7 +621,7 @@ export default function BulkPromotion() {
           <div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">Bulk Promotion</h1>
             <p className="text-indigo-200 text-sm mt-0.5">
-              Move students to the next class with rank-based roll numbers
+              Move students to the next class with rank-based roll numbers | <strong>Start by Removing Students from Class X</strong>
             </p>
           </div>
         </div>

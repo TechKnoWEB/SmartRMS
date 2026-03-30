@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
-import { buildStudentResult, rankComparator } from '../../utils/grades'
+import { buildStudentResult } from '../../utils/grades'
 import ReportCard from '../../components/results/ReportCard'
 import SchoolSearch from '../../components/ui/SchoolSearch'
 import { HIDE_SCHOOL_LIST } from '../../config'
@@ -10,8 +10,8 @@ import {
   Calendar, Award, Heart, Building2,
 } from 'lucide-react'
 
-const RATE_MAX    = 10
-const RATE_WINDOW = 10
+const RATE_MAX    = 3
+const RATE_WINDOW = 45
 
 // Server-side rate check via Edge Function (fail-open so portal stays usable)
 async function checkRateServer(identifier, schoolId) {
@@ -213,7 +213,7 @@ export default function StudentPortal() {
 
     supabase
       .from('schools')
-      .select('id, school_name, tagline, academic_session, school_code')
+      .select('id, school_name, address, academic_session, school_code, logo_url')
       .eq('school_code', diseCode)
       .eq('is_active', true)
       .single()
@@ -297,36 +297,8 @@ export default function StudentPortal() {
       if (!cfgRows?.length) throw new Error('Result configuration missing.')
 
       const built = buildStudentResult(stu, cfgRows, mRows || [])
-      built.show_ranks     = pub.show_ranks
       built.allow_download = pub.allow_download
-
-      if (pub.show_ranks) {
-        const { data: allStudents } = await supabase
-          .from('students').select('*')
-          .eq('school_id', schoolId)
-          .eq('class_name', class_name).eq('section', section.toUpperCase())
-
-        const { data: allMarks } = await supabase
-          .from('marks').select('*')
-          .eq('school_id', schoolId)
-          .in('student_id', (allStudents || []).map(s => s.id))
-
-        const marksByStudent = {}
-        ;(allMarks || []).forEach(m => {
-          if (!marksByStudent[m.student_id]) marksByStudent[m.student_id] = []
-          marksByStudent[m.student_id].push(m)
-        })
-
-        const all = (allStudents || []).map(s =>
-          buildStudentResult(s, cfgRows, marksByStudent[s.id] || [])
-        )
-        all.sort(rankComparator)
-        const me = all.find(r => r.student.id === stu.id)
-        if (me) {
-          built.rank           = all.indexOf(me) + 1
-          built.total_students = all.length
-        }
-      }
+      // rank is intentionally not computed here — rank visibility is restricted to Admin/Teachers only
 
       setResult({ result: built, school })
     } catch (err) {
@@ -348,9 +320,13 @@ export default function StudentPortal() {
         <nav className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 px-4 backdrop-blur-md">
           <div className="mx-auto flex h-16 max-w-7xl items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
-                <GraduationCap className="h-5 w-5" />
-              </div>
+              {school?.logo_url ? (
+                <img src={school.logo_url} alt="School logo" className="h-9 w-9 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shadow-sm flex-shrink-0" />
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/20 flex-shrink-0">
+                  <GraduationCap className="h-5 w-5" />
+                </div>
+              )}
               <h1 className="truncate text-lg font-bold text-slate-800">
                 {school?.school_name || 'Result Portal'}
               </h1>
@@ -399,9 +375,13 @@ export default function StudentPortal() {
       <nav className="z-50 w-full border-b border-slate-100 bg-white px-4">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
-              <GraduationCap className="h-4 w-4" />
-            </div>
+            {school?.logo_url ? (
+              <img src={school.logo_url} alt="School logo" className="h-8 w-8 rounded-lg object-contain bg-white border border-slate-100 p-0.5 flex-shrink-0" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white flex-shrink-0">
+                <GraduationCap className="h-4 w-4" />
+              </div>
+            )}
             <h1 className="truncate text-base font-bold text-slate-800">
               {resolving ? 'Loading…' : school?.school_name || 'Result Portal'}
             </h1>
@@ -424,9 +404,13 @@ export default function StudentPortal() {
               style={{ backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
           </div>
           <div className={`relative z-10 max-w-md px-12 transition-all duration-1000 ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}>
-            <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-lg shadow-indigo-100/80 ring-1 ring-indigo-100/50">
-              <GraduationCap className="h-8 w-8 text-indigo-600" />
-            </div>
+            {school?.logo_url ? (
+              <img src={school.logo_url} alt="School logo" className="mb-8 h-16 w-16 rounded-2xl object-contain bg-white shadow-lg shadow-indigo-100/80 ring-1 ring-indigo-100/50 p-1" />
+            ) : (
+              <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-lg shadow-indigo-100/80 ring-1 ring-indigo-100/50">
+                <GraduationCap className="h-8 w-8 text-indigo-600" />
+              </div>
+            )}
             <h2 className="text-4xl font-extrabold leading-tight tracking-tight text-slate-900">
               Student<br />
               <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">

@@ -17,7 +17,6 @@ const NAV = [
   { to: '/results',    label: 'Results',     icon: FileText,        roles: ['admin','teacher','viewer'] },
   { to: '/analytics',  label: 'Analytics',   icon: BarChart2,       roles: ['admin','teacher','viewer'] },
   null,
-  { to: '/promotion',  label: 'Bulk Promote',  icon: ArrowUpCircle, roles: ['admin'], beta: true },
   { to: '/audit',      label: 'Activity Log',  icon: ClipboardList, roles: ['admin'] },
   { to: '/users',      label: 'Users',         icon: UserCog,       roles: ['admin'] },
   { to: '/settings',   label: 'Settings',      icon: Settings,      roles: ['admin'] },
@@ -28,6 +27,7 @@ const NAV = [
     icon: Wrench,
     roles: ['admin'],
     children: [
+      { to: '/promotion',  label: 'Bulk Promote',  icon: ArrowUpCircle, roles: ['admin'], beta: true },
       { to: '/id-cards',    label: 'ID Cards',    icon: CreditCard },
       { to: '/exam-labels', label: 'Exam Labels', icon: Tag },
     ],
@@ -209,6 +209,11 @@ export default function Sidebar({ open, onClose, collapsed }) {
                                     !isActive && 'group-hover:scale-110'
                                   )} />
                                   <span className="flex-1 truncate">{child.label}</span>
+                                  {child.beta && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wide bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                                      Beta
+                                    </span>
+                                  )}
                                   {isActive && <ChevronRight className="w-3 h-3 opacity-60" />}
                                 </>
                               )}

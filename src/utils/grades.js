@@ -9,7 +9,7 @@ export const DEFAULT_GRADE_BANDS = [
   { grade_label: 'B+', min_pct: 70, color_class: 'text-blue-700 bg-blue-50' },
   { grade_label: 'B',  min_pct: 60, color_class: 'text-blue-600 bg-blue-50' },
   { grade_label: 'C+', min_pct: 45, color_class: 'text-amber-700 bg-amber-50' },
-  { grade_label: 'C',  min_pct: 33, color_class: 'text-amber-600 bg-amber-50' },
+  { grade_label: 'C',  min_pct: 25, color_class: 'text-amber-600 bg-amber-50' },
   { grade_label: 'D',  min_pct:  0, color_class: 'text-red-600 bg-red-50' },
 ]
 
@@ -44,7 +44,7 @@ export function getMaxForTerm(cfg, termNum) {
 }
 
 export function buildStudentResult(student, cfgRows, mRows, options = {}) {
-  const { gradeBands = null, passMark = 33 } = options
+  const { gradeBands = null, passMark = 25 } = options
 
   let maxTerms = 0
   cfgRows.forEach(cfg => { const tc = getTermCount(cfg); if (tc > maxTerms) maxTerms = tc })
