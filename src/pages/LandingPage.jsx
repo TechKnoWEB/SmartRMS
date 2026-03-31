@@ -9,6 +9,8 @@ import {
   ArrowRight, CheckCircle, Star, Globe, Zap, Shield,
   BookOpen, Award, TrendingUp, ChevronDown, Menu, X,
   ClipboardList, Calendar, ArrowUpCircle, Settings,
+  CreditCard, Tag, Sparkles, MapPin, Phone, Mail, Twitter,
+  Linkedin, Github, Facebook,
 } from 'lucide-react'
 
 // ── Animated counter hook ─────────────────────────────────────
@@ -136,49 +138,67 @@ function WorkflowStep({ num, title, desc, delay = 0 }) {
 }
 
 // ── Plan card ─────────────────────────────────────────────────
-function PlanCard({ name, price, features, badge, highlight, delay = 0 }) {
+function PlanCard({ name, price, priceNote, studentLimit, features, badge, highlight, cta = 'Get Started', delay = 0 }) {
   const [ref, inView] = useInView()
   return (
     <div
       ref={ref}
       style={{ transitionDelay: `${delay}ms` }}
-      className={`relative p-7 rounded-2xl flex flex-col gap-5
+      className={`relative flex flex-col rounded-2xl
         ${highlight
-          ? 'bg-gradient-to-b from-indigo-600 to-indigo-700 ring-2 ring-indigo-400/50 shadow-2xl shadow-indigo-500/30'
-          : 'bg-white ring-1 ring-slate-200 shadow-sm hover:shadow-md'
+          ? 'bg-gradient-to-b from-indigo-600 to-indigo-800 ring-2 ring-indigo-400/60 shadow-2xl shadow-indigo-500/40 scale-[1.03] z-10'
+          : 'bg-white ring-1 ring-slate-200 shadow-sm hover:shadow-xl hover:ring-slate-300 hover:-translate-y-0.5'
         }
-        ${inView ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+        ${inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}
         transition-all duration-500 ease-out`}
     >
       {badge && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-900 text-xs font-black uppercase tracking-wider shadow-lg">
+        <div className="absolute -top-3.5 left-0 right-0 flex justify-center">
+          <span className="px-3.5 py-1 rounded-full bg-amber-400 text-slate-900 text-[11px] font-black uppercase tracking-wider shadow-lg shadow-amber-400/30">
             {badge}
           </span>
         </div>
       )}
-      <div>
-        <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${highlight ? 'text-indigo-200' : 'text-slate-500'}`}>{name}</p>
-        <p className={`text-4xl font-black leading-none ${highlight ? 'text-white' : 'text-slate-900'}`}>{price}</p>
+
+      {/* Header */}
+      <div className={`px-6 pt-7 pb-5 border-b ${highlight ? 'border-white/10' : 'border-slate-100'}`}>
+        <p className={`text-[11px] font-bold uppercase tracking-[0.14em] mb-3 ${highlight ? 'text-indigo-200' : 'text-slate-400'}`}>{name}</p>
+        <div className="flex items-end gap-1.5 mb-4">
+          <p className={`text-4xl font-black leading-none tracking-tight ${highlight ? 'text-white' : 'text-slate-900'}`}>{price}</p>
+          {priceNote && (
+            <span className={`text-sm font-medium pb-0.5 ${highlight ? 'text-indigo-200' : 'text-slate-400'}`}>{priceNote}</span>
+          )}
+        </div>
+        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold
+          ${highlight ? 'bg-white/15 text-white' : 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100'}`}>
+          <Users className="w-3 h-3 flex-shrink-0" />
+          {studentLimit}
+        </div>
       </div>
-      <ul className="flex flex-col gap-2.5 flex-1">
+
+      {/* Features */}
+      <ul className="flex flex-col gap-2.5 flex-1 px-6 py-5">
         {features.map((f, i) => (
-          <li key={i} className={`flex items-start gap-2.5 text-sm ${highlight ? 'text-indigo-50' : 'text-slate-700'}`}>
-            <CheckCircle className={`w-4 h-4 mt-0.5 flex-shrink-0 ${highlight ? 'text-indigo-200' : 'text-emerald-500'}`} />
+          <li key={i} className={`flex items-start gap-2.5 text-[13px] leading-snug ${highlight ? 'text-indigo-50' : 'text-slate-600'}`}>
+            <CheckCircle className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${highlight ? 'text-emerald-300' : 'text-emerald-500'}`} />
             {f}
           </li>
         ))}
       </ul>
-      <Link
-        to="/register"
-        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all
-          ${highlight
-            ? 'bg-white text-indigo-700 hover:bg-indigo-50'
-            : 'bg-slate-900 text-white hover:bg-slate-800'
-          }`}
-      >
-        Get Started <ArrowRight className="w-4 h-4" />
-      </Link>
+
+      {/* CTA */}
+      <div className="px-6 pb-6">
+        <Link
+          to={cta === 'Contact Sales' ? '/contact' : '/register'}
+          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all
+            ${highlight
+              ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-lg shadow-amber-400/25'
+              : 'bg-slate-900 text-white hover:bg-slate-700'
+            }`}
+        >
+          {cta} <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
     </div>
   )
 }
@@ -196,15 +216,18 @@ export default function LandingPage() {
   }, [])
 
   const features = [
-    { icon: BookOpen,      title: 'Dynamic Marks Entry',      accent: 'indigo',  desc: 'Enter marks for 1–6 configurable terms per subject. Bulk edit, inline validation, auto-save with conflict detection.' },
-    { icon: FileText,      title: 'Beautiful Report Cards',   accent: 'amber',   desc: 'Auto-generated PDF report cards with school logo, letterhead, grades, ranks, and attendance percentage.' },
-    { icon: BarChart2,     title: 'Real-Time Analytics',      accent: 'emerald', desc: 'Class-level pass rates, top scorers, subject-wise performance breakdown, and comparative analytics.' },
-    { icon: ArrowUpCircle, title: 'Bulk Student Promotion',   accent: 'violet',  desc: 'Promote entire classes to next year in seconds — select students, assign roll numbers, confirm.' },
-    { icon: Calendar,      title: 'Attendance Tracking',      accent: 'teal',    desc: 'Record annual attendance percentages per student. Automatically reflected on report cards.' },
-    { icon: Settings,      title: 'Fully Configurable',       accent: 'rose',    desc: 'Custom grading bands, custom pass marks, 1–6 terms, custom term names — every school is different.' },
-    { icon: Users,         title: 'Role-Based Access',        accent: 'indigo',  desc: 'Admin, Teacher, Viewer roles. Teachers see only their assigned subjects and classes.' },
-    { icon: Shield,        title: 'Secure by Design',         accent: 'emerald', desc: 'Row-level security on every table, rate-limited login, term-locking, audit trail on every action.' },
-    { icon: Globe,         title: 'Student Portal',           accent: 'amber',   desc: 'Students look up their own results with a simple roll number search. Zero login required.' },
+    { icon: BookOpen,      title: 'Dynamic Marks Entry',        accent: 'indigo',  desc: 'Enter marks for 1–6 configurable terms per subject. Bulk edit, inline validation, auto-save with conflict detection.' },
+    { icon: FileText,      title: 'Beautiful Report Cards',     accent: 'amber',   desc: 'Auto-generated PDF report cards with school logo, letterhead, grades, ranks, and attendance percentage.' },
+    { icon: BarChart2,     title: 'Real-Time Analytics',        accent: 'emerald', desc: 'Class-level pass rates, top scorers, subject-wise performance breakdown, and comparative analytics.' },
+    { icon: ArrowUpCircle, title: 'Bulk Student Promotion',     accent: 'violet',  desc: 'Promote entire classes with rank-ordered roll assignment — Roll 1 goes to the best academic rank. Preview rank and percentage before confirming.' },
+    { icon: Calendar,      title: 'Attendance Tracking',        accent: 'teal',    desc: 'Record annual attendance percentages per student. Automatically reflected on report cards.' },
+    { icon: Settings,      title: 'Fully Configurable',         accent: 'rose',    desc: 'Custom grading bands, custom pass marks, 1–6 terms, custom term names — every school is different.' },
+    { icon: Users,         title: 'Role-Based Access',          accent: 'indigo',  desc: 'Admin, Teacher, Viewer roles. Teachers see only their assigned subjects and classes.' },
+    { icon: Shield,        title: 'Secure by Design',           accent: 'emerald', desc: 'Row-level security on every table, rate-limited login, term-locking, audit trail on every action.' },
+    { icon: Globe,         title: 'Student Portal',             accent: 'amber',   desc: 'Students look up their own results with a simple roll number search. Zero login required.' },
+    { icon: CreditCard,    title: 'ID Card Generation',         accent: 'violet',  desc: 'Generate print-ready student ID cards with name, class, roll number, school branding, and photo placeholder.' },
+    { icon: Tag,           title: 'Exam Labels & Hall Tickets', accent: 'teal',    desc: 'Auto-generate exam seat labels and hall tickets with student details, roll number, and room assignments.' },
+    { icon: Sparkles,      title: 'More Features Coming',       accent: 'rose',    desc: 'Fee management, SMS result alerts, parent mobile app, and more — actively developed and rolling out soon.' },
   ]
 
   const testimonials = [
@@ -347,8 +370,8 @@ export default function LandingPage() {
 
           {/* Sub */}
           <p className="fade-up-3 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto mb-10">
-            A complete school result management platform — marks entry, report cards, analytics,
-            attendance, and bulk student operations. Built for Indian schools.
+            A complete school management platform — marks entry, report cards, analytics,
+            ID card generation, exam labels, attendance, bulk operations, and more. Built for Indian schools.
           </p>
 
           {/* CTAs */}
@@ -448,7 +471,7 @@ export default function LandingPage() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-900">Dashboard</p>
-                  <p className="text-[10px] text-slate-500">2025-26 Academic Session</p>
+                  <p className="text-[10px] text-slate-500">2026-27 Academic Session</p>
                 </div>
                 <div className="ml-auto flex gap-1.5">
                   {['bg-red-500','bg-amber-500','bg-green-500'].map(c => (
@@ -508,45 +531,66 @@ export default function LandingPage() {
 
       {/* ── PRICING ──────────────────────────────────────────── */}
       <section id="pricing" className="py-24 px-5 bg-slate-50 border-t border-slate-200">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">Pricing</p>
             <h2 className="font-display text-4xl md:text-5xl font-black text-slate-900 mb-4">
               Start free.<br />Scale when ready.
             </h2>
             <p className="text-slate-600 text-base max-w-lg mx-auto">
-              All schools begin on the Free plan. Upgrade when you need advanced analytics, Excel exports, or priority support.
+              All features are included in every plan. You only pay for more students — pick the plan that fits your school size.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-center pt-4">
             <PlanCard
               name="Free"
               price="₹0"
+              priceNote="forever"
+              studentLimit="Up to 50 students"
+              cta="Get Started Free"
               delay={0}
               features={[
-                'Up to 3 classes', 'Marks entry & results', 'PDF report cards',
-                'Student portal', 'Basic analytics', '3 user accounts',
+                'All features included', 'Marks entry & report cards',
+                'Analytics & Excel export', 'Student portal',
+                'ID card generation', 'Exam labels',
+              ]}
+            />
+            <PlanCard
+              name="Basic"
+              price="₹999"
+              priceNote="/mo"
+              studentLimit="Up to 500 students"
+              delay={80}
+              features={[
+                'Everything in Free', 'Larger class capacity',
+                'Bulk student promotion', 'Attendance tracking',
+                'Priority email support',
               ]}
             />
             <PlanCard
               name="Pro"
-              price="₹499/mo"
+              price="₹2,499"
+              priceNote="/mo"
+              studentLimit="Up to 1,500 students"
               badge="Most Popular"
               highlight
-              delay={100}
+              delay={160}
               features={[
-                'Unlimited classes', 'Excel export', 'Advanced analytics',
-                'Attendance tracking', 'Bulk promotion', 'Email support',
-                'Audit trail', 'Up to 20 users',
+                'Everything in Basic', 'High-volume capacity',
+                'SMS result alerts', 'Audit trail & logs',
+                'Dedicated onboarding',
               ]}
             />
             <PlanCard
               name="Enterprise"
               price="Custom"
-              delay={200}
+              studentLimit="Unlimited students"
+              cta="Contact Sales"
+              delay={240}
               features={[
-                'Everything in Pro', 'Custom branding', 'Dedicated support',
-                'SLA guarantee', 'Multi-campus', 'API access',
+                'Everything in Pro', 'Custom branding',
+                'SLA guarantee', 'Multi-campus support',
+                'Dedicated account manager',
               ]}
             />
           </div>
@@ -612,13 +656,30 @@ export default function LandingPage() {
       {/* ── FOOTER ───────────────────────────────────────────── */}
       <footer className="border-t border-slate-200 py-12 px-5 bg-white">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
-            <div>
+          <div className="flex flex-col md:flex-row items-start justify-between gap-10">
+            <div className="max-w-xs">
               <div className="flex items-center gap-2.5 mb-3">
                 <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
                   <GraduationCap className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-display font-bold text-base text-slate-900">Smart RMS</span>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                India's smartest school result management platform — built for modern schools.
+              </p>
+              <div className="flex flex-col gap-2.5">
+                <span className="flex items-start gap-2 text-xs text-slate-600">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+                  12, Rabindra Sarani, Salt Lake Sector V,<br />Kolkata — 700 091, West Bengal, India
+                </span>
+                <a href="tel:+919800012345" className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  +91 98000 12345
+                </a>
+                <a href="mailto:support@smartrms.in" className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                  <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  support@smartrms.in
+                </a>
               </div>
             </div>
             <div className="flex flex-wrap gap-8 text-sm">
@@ -630,14 +691,14 @@ export default function LandingPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Features</p>
-                {['Marks Entry', 'Report Cards', 'Analytics', 'Attendance', 'Bulk Promote'].map(l => (
+                {['Marks Entry', 'Report Cards', 'Analytics', 'Attendance', 'Bulk Promote', 'ID Card Generation', 'Exam Labels'].map(l => (
                   <span key={l} className="text-slate-600 text-xs">{l}</span>
                 ))}
               </div>
             </div>
           </div>
           <div className="mt-10 pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">© 2025 Smart RMS. All rights reserved.</p>
+            <p className="text-xs text-slate-500">© 2026 Smart RMS. All rights reserved.</p>
             <p className="text-xs text-slate-500 flex items-center gap-1.5">
               <Lock className="w-3 h-3" /> Secured with Enterprise Grade Security
             </p>

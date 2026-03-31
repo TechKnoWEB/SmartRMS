@@ -101,9 +101,9 @@ function InfoChip({ icon: Icon, label, value }) {
 /* ═══════════════════════════════════════════════════════════════════════════════
    MAIN
    ═══════════════════════════════════════════════════════════════════════════════ */
-export default function ReportCard({ result, school, showActions = true, allowDownload = true }) {
+export default function ReportCard({ result, school, showActions = true, allowDownload = true, passMark = 33 }) {
   if (!result) return null
-  const { student, subjects, grand_total, grand_max, percentage, grade, result_status, pass, rank, total_students, term_names, attendance_pct } = result
+  const { student, subjects, grand_raw_total, grand_total, grand_max, percentage, grade, result_status, pass, rank, total_students, term_names, attendance_pct } = result
   const tn = term_names || ['Term 1', 'Term 2', 'Term 3']
   const anyInt = subjects.some(s => s.has_internal)
 
@@ -225,7 +225,7 @@ export default function ReportCard({ result, school, showActions = true, allowDo
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-gradient-to-br from-indigo-500 to-violet-500" /><span className="font-medium">Written</span></span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-gradient-to-br from-amber-400 to-orange-500" /><span className="font-medium">Internal</span></span>
             <span className="flex items-center gap-1.5"><span className="inline-flex items-center justify-center rounded bg-red-50 px-1 py-0.5 text-[9px] font-bold text-red-500 ring-1 ring-red-100">AB</span><span className="font-medium">= Absent</span></span>
-            <span className="ml-auto hidden sm:flex items-center gap-1 text-[10px] print:text-[8px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Pass threshold: 33%</span>
+            <span className="ml-auto hidden sm:flex items-center gap-1 text-[10px] print:text-[8px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Pass threshold: {passMark}%</span>
           </div>
         )}
 
@@ -335,7 +335,7 @@ export default function ReportCard({ result, school, showActions = true, allowDo
                 {anyInt && (
                   <>
                     {/* Raw total in footer */}
-                    <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-[12px] print:text-[10px] font-bold text-slate-700 tabular-nums">{grand_total.toFixed(1)}</td>
+                    <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-[12px] print:text-[10px] font-bold text-slate-700 tabular-nums">{grand_raw_total.toFixed(1)}</td>
                     {/* ── divisor footer cell ── */}
                     {showDivisor && (
                       <td className="border-t-2 border-r border-slate-300 px-2 py-3 print:px-1 print:py-1.5 text-center text-slate-300">—</td>

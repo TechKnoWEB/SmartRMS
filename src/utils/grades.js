@@ -1,7 +1,4 @@
 // src/utils/grades.js
-// Dynamic grading utility — supports custom grade bands fetched from DB,
-// and up to 4 terms via the config table's max_t1…max_t4 columns.
-// Term cap is 4 — T5/T6 columns were removed in migration 015.
 
 export const DEFAULT_GRADE_BANDS = [
   { grade_label: 'A+', min_pct: 90, color_class: 'text-emerald-700 bg-emerald-50' },
@@ -62,7 +59,7 @@ export function buildStudentResult(student, cfgRows, mRows, options = {}) {
   })
 
   const subjects = []
-  let grandTotal = 0, grandMax = 0, overallPass = true
+  let grandTotal = 0, grandMax = 0, grandRawTotal = 0, overallPass = true
 
   cfgRows.forEach(cfg => {
     const hi  = cfg.has_internal !== false
@@ -72,7 +69,7 @@ export function buildStudentResult(student, cfgRows, mRows, options = {}) {
     const subj = {
       subject_name: cfg.subject_name, has_internal: hi, divisor: div,
       terms: [], raw_total: 0, max_total: 0, final_total: 0, final_max: 0,
-      subject_pass: true, has_ab: false,
+      subject_pass: true, has_ab: false, subject_grade: '', subject_percentage: 0,
     }
     let rawT = 0, rawM = 0
 
@@ -105,13 +102,13 @@ export function buildStudentResult(student, cfgRows, mRows, options = {}) {
     subj.subject_grade      = getGrade(pct, gradeBands)
     subj.subject_pass       = pct >= passMark
     if (!subj.subject_pass) overallPass = false
-    grandTotal += subj.final_total; grandMax += subj.final_max
+    grandRawTotal += subj.raw_total; grandTotal += subj.final_total; grandMax += subj.final_max
     subjects.push(subj)
   })
 
   const overallPct  = grandMax > 0 ? Math.round((grandTotal / grandMax * 100) * 100) / 100 : 0
-  const d_count     = subjects.filter(s => !s.subject_pass).length
-  const fail_count  = d_count
+  const d_count     = subjects.filter(s => s.subject_grade === 'D').length
+  const fail_count  = subjects.filter(s => !s.subject_pass).length
 
   return {
     student: {
@@ -122,6 +119,7 @@ export function buildStudentResult(student, cfgRows, mRows, options = {}) {
     },
     term_names: termNames.slice(0, maxTerms), max_terms: maxTerms,
     subjects,
+    grand_raw_total: Math.round(grandRawTotal * 100) / 100,
     grand_total: Math.round(grandTotal * 100) / 100,
     grand_max:   Math.round(grandMax   * 100) / 100,
     percentage: overallPct,
@@ -135,7 +133,6 @@ export function buildStudentResult(student, cfgRows, mRows, options = {}) {
 }
 
 export function rankComparator(a, b) {
-  if (a.d_count    !== b.d_count)    return a.d_count    - b.d_count
-  if (a.fail_count !== b.fail_count) return a.fail_count - b.fail_count
+  if (a.d_count !== b.d_count) return a.d_count - b.d_count
   return b.percentage - a.percentage
 }

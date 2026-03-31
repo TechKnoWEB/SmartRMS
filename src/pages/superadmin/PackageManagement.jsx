@@ -172,9 +172,9 @@ function PackageEditDrawer({ pkg, creds, onClose, onSaved }) {
 
           {/* Limits row */}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Max Students" hint="-1 = unlimited">
+            <Field label="Max Students" hint="50 / 500 / 1500 / -1=∞">
               <input type="number" min="-1" value={maxStudents} onChange={e => setMaxStudents(e.target.value)}
-                placeholder="-1 (unlimited)"
+                placeholder="e.g. 500"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 transition-all" />
             </Field>
             <Field label="Display Order">
@@ -225,6 +225,14 @@ function PackageEditDrawer({ pkg, creds, onClose, onSaved }) {
                 )
               })}
             </div>
+          </div>
+
+          {/* Note: all features free */}
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 ring-1 ring-emerald-200 dark:ring-emerald-800/30">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
+              All features are included in every plan. Plans differ only by <strong>student capacity</strong> (Max Students above). Feature toggles below are available for custom overrides if needed.
+            </p>
           </div>
 
           {/* Warning */}
@@ -320,7 +328,18 @@ export default function PackageManagement({ schools, creds, onUpdated }) {
         <div>
           <h2 className="text-lg font-black text-gray-900 dark:text-white">Package Management</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            Click a package card to edit its name, price and features.
+            Click a package card to edit its details. Plans differ only by <strong className="text-indigo-500 dark:text-indigo-400">student capacity</strong> — all features are included in every plan.
+          </p>
+        </div>
+      </div>
+
+      {/* Student-count model banner */}
+      <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-200 dark:ring-indigo-800/40">
+        <Users className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs font-bold text-indigo-800 dark:text-indigo-300">Pricing is based on student capacity only</p>
+          <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-0.5 leading-relaxed">
+            Free · 50 students &nbsp;|&nbsp; Basic · 500 students &nbsp;|&nbsp; Pro · 1,500 students &nbsp;|&nbsp; Enterprise · Custom
           </p>
         </div>
       </div>
@@ -374,33 +393,23 @@ export default function PackageManagement({ schools, creds, onUpdated }) {
                   <span className="text-2xl font-black text-gray-400 dark:text-gray-500 tabular-nums">{schoolsOn}</span>
                 </div>
 
-                <p className="text-[11px] text-gray-400 mb-3 leading-relaxed min-h-[32px]">{pkg.description}</p>
-
-                {/* Feature indicator bar */}
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all"
-                      style={{ width: `${(enabledCnt / totalCnt) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-bold text-gray-400 tabular-nums">{enabledCnt}/{totalCnt}</span>
+                {/* Student capacity — PRIMARY differentiator */}
+                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-white/60 dark:bg-gray-900/40 ring-1 ring-gray-200/80 dark:ring-gray-700/60">
+                  <Users className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+                  <span className="text-xs font-black text-gray-800 dark:text-gray-200">
+                    {pkg.max_students < 0
+                      ? 'Unlimited students'
+                      : `Up to ${pkg.max_students.toLocaleString('en-IN')} students`}
+                  </span>
                 </div>
 
-                {/* Enabled feature pills */}
-                <div className="flex flex-wrap gap-1">
-                  {FEATURES.filter(f => features[f.key]).map(f => (
-                    <span key={f.key} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400 ring-1 ring-gray-200/60 dark:ring-gray-700/60">
-                      {f.label}
-                    </span>
-                  ))}
-                </div>
+                <p className="text-[11px] text-gray-400 mb-3 leading-relaxed min-h-[28px]">{pkg.description}</p>
 
-                {/* Max students */}
-                <p className="text-[10px] text-gray-400 mt-3 flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {pkg.max_students < 0 ? 'Unlimited students' : `Up to ${pkg.max_students.toLocaleString('en-IN')} students`}
-                </p>
+                {/* All-features badge */}
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">All features included</span>
+                </div>
               </div>
             )
           })}

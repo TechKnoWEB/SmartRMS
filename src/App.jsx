@@ -23,6 +23,7 @@ const LandingPage         = lazy(() => import('./pages/LandingPage'))
 const ResetPassword       = lazy(() => import('./pages/ResetPassword'))
 const ExamLabels          = lazy(() => import('./pages/admin/ExamLabels'))
 const BulkIDCards         = lazy(() => import('./pages/admin/BulkIDCards'))
+const ContactPage         = lazy(() => import('./pages/ContactPage'))
 
 // ── Env setup screen ─────────────────────────────────────────────────────────
 // Rendered instead of a blank page when .env is missing or misconfigured.
@@ -134,6 +135,7 @@ export default function App() {
         <Route path="/login"          element={<LoginPage />} />
         <Route path="/portal"         element={<StudentPortal />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/contact"        element={<ContactPage />} />
 
         {/* Platform-level (no school session required) */}
         <Route path="/register"   element={<RegisterSchool />} />

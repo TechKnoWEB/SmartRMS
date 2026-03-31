@@ -60,10 +60,11 @@ export async function callApi(path, creds, body = {}) {
 }
 
 /* ── Plans ───────────────────────────────────────────────────── */
+// Student count is the primary plan differentiator. All features are available on every plan.
 export const PLANS = [
   { key: 'free',       label: 'Free',       color: 'gray',   price: '₹0',        maxStudents: 50    },
-  { key: 'basic',      label: 'Basic',      color: 'blue',   price: '₹999/mo',   maxStudents: 200   },
-  { key: 'pro',        label: 'Pro',        color: 'indigo', price: '₹2,499/mo', maxStudents: 1000  },
+  { key: 'basic',      label: 'Basic',      color: 'blue',   price: '₹999/mo',   maxStudents: 500   },
+  { key: 'pro',        label: 'Pro',        color: 'indigo', price: '₹2,499/mo', maxStudents: 1500  },
   { key: 'enterprise', label: 'Enterprise', color: 'violet', price: 'Custom',    maxStudents: '∞'   },
 ]
 
@@ -78,14 +79,15 @@ export const FEATURES = [
   { key: 'bulk_operations',label: 'Bulk Operations',icon: Database,     desc: 'Bulk import/export operations'         },
 ]
 
+// All features are free on every plan — pricing is based on student capacity only.
 export const DEF_FEATURES = {
-  marks_entry: true, report_cards: true, analytics: false,
-  excel_export: false, student_portal: true, sms_alerts: false, bulk_operations: false,
+  marks_entry: true, report_cards: true, analytics: true,
+  excel_export: true, student_portal: true, sms_alerts: true, bulk_operations: true,
 }
 
 export const PLAN_FEATURES = {
-  free:       { marks_entry: true,  report_cards: true,  analytics: false, excel_export: false, student_portal: false, sms_alerts: false, bulk_operations: false },
-  basic:      { marks_entry: true,  report_cards: true,  analytics: true,  excel_export: true,  student_portal: false, sms_alerts: false, bulk_operations: false },
-  pro:        { marks_entry: true,  report_cards: true,  analytics: true,  excel_export: true,  student_portal: true,  sms_alerts: true,  bulk_operations: false },
-  enterprise: { marks_entry: true,  report_cards: true,  analytics: true,  excel_export: true,  student_portal: true,  sms_alerts: true,  bulk_operations: true  },
+  free:       { marks_entry: true, report_cards: true, analytics: true, excel_export: true, student_portal: true, sms_alerts: true, bulk_operations: true },
+  basic:      { marks_entry: true, report_cards: true, analytics: true, excel_export: true, student_portal: true, sms_alerts: true, bulk_operations: true },
+  pro:        { marks_entry: true, report_cards: true, analytics: true, excel_export: true, student_portal: true, sms_alerts: true, bulk_operations: true },
+  enterprise: { marks_entry: true, report_cards: true, analytics: true, excel_export: true, student_portal: true, sms_alerts: true, bulk_operations: true },
 }

@@ -169,15 +169,13 @@ export default function Results() {
     }
 
     const studentIds = students.map((s) => s.id)
-    const [{ data: allMarks }, { data: gradingCfg }, { data: schoolRow }] = await Promise.all([
+    const [{ data: allMarks }, { data: schoolRow }] = await Promise.all([
       supabase.from('marks').select('*').in('student_id', studentIds).eq('school_id', user.school_id),
-      supabase.from('grading_config').select('*').eq('school_id', user.school_id),
       supabase.from('schools').select('pass_mark').eq('id', user.school_id).single(),
     ])
 
     const resultOptions = {
       passMark: schoolRow?.pass_mark ?? 25,
-      gradeBands: gradingCfg?.length ? gradingCfg : null,
     }
 
     const marksByStudent = {}
@@ -271,7 +269,10 @@ export default function Results() {
     try {
       const res = await fetch(efUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
         body: JSON.stringify({
           user_id:    user.user_id,
           school_id:  user.school_id,
@@ -831,6 +832,7 @@ export default function Results() {
               <ReportCard
                 result={selected.result}
                 school={selected.school}
+                passMark={school?.pass_mark ?? 33}
                 showActions
               />
             )}
